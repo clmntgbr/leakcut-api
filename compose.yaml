@@ -41,12 +41,11 @@ services:
     shm_size: "1gb"
     environment:
       OCR_LANG: ${OCR_LANG:-fr+en}
-      PADDLEOCR_VERSION: ${PADDLEOCR_VERSION:-PP-OCRv5}
       OCR_INFER_CONCURRENCY: ${OCR_INFER_CONCURRENCY:-2}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
       interval: 30s
       timeout: 5s
       retries: 10
-      start_period: 240s
+      start_period: 60s
     restart: unless-stopped

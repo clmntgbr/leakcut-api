@@ -104,13 +104,10 @@ services:
       interval: 30s
       timeout: 5s
       retries: 10
-      start_period: 240s
+      start_period: 60s
     environment:
       OCR_LANG: ${OCR_LANG:-fr+en}
-      PADDLEOCR_VERSION: ${PADDLEOCR_VERSION:-PP-OCRv5}
       OCR_INFER_CONCURRENCY: ${OCR_INFER_CONCURRENCY:-2}
-    volumes:
-      - ocr_models:/root/.paddlex
     networks:
       - api
     restart: unless-stopped
@@ -234,7 +231,6 @@ volumes:
   go-build-cache:
   minio_data:
   database_data:
-  ocr_models:
 
 networks:
   api:
