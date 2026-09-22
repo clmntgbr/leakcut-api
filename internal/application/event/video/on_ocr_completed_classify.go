@@ -3,6 +3,7 @@ package video
 import (
 	"context"
 	"encoding/json"
+	"log"
 
 	videocommand "go-api/internal/application/command/video"
 	"go-api/internal/application/messaging"
@@ -30,5 +31,12 @@ func (h *ClassifyFramesOnOCRCompletedHandler) Handle(ctx context.Context, payloa
 		return messaging.NonRetryable(err)
 	}
 
-	return h.classify.Handle(ctx, videocommand.ClassifyFramesCommand{VideoID: videoID})
+	log.Printf("classify worker received event type=%s videoId=%s", evt.EventType(), evt.VideoID)
+	log.Printf("classify worker processing videoId=%s", evt.VideoID)
+	if err := h.classify.Handle(ctx, videocommand.ClassifyFramesCommand{VideoID: videoID}); err != nil {
+		log.Printf("classify worker failed videoId=%s: %v", evt.VideoID, err)
+		return err
+	}
+	log.Printf("classify worker finished videoId=%s", evt.VideoID)
+	return nil
 }

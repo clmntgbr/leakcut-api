@@ -8,7 +8,6 @@ ENV OMP_NUM_THREADS=1 \
     RAPIDOCR_HOME=/root/.rapidocr
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl \
         libgomp1 \
         libglib2.0-0 \
         libgl1 \
@@ -17,11 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py .
+COPY engine.py worker.py .
 
-# Download RapidOCR ONNX weights at build time so runtime stays offline.
-RUN python -c "from app import load_engine; load_engine()"
+RUN python -c "from engine import load_engine; load_engine()"
 
-EXPOSE 8080
-
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080", "--loop", "asyncio", "--http", "h11", "--workers", "1"]
+CMD ["python", "worker.py"]

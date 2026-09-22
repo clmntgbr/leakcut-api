@@ -198,9 +198,9 @@ Ce mécanisme tourne **avant** tout upload S3 : seules les frames retenues sont 
 
 | Paramètre | Défaut | Rôle |
 |---|---|---|
-| `analysis_fps` | 3 | Fréquence à laquelle ffmpeg décode pour l'analyse de diff (pas la fréquence de rétention) |
-| `diff_threshold` | 0.08 (8% de différence moyenne) | Seuil au-delà duquel une frame est considérée "changée" |
-| `max_interval_seconds` | 10 | Intervalle max sans retenir de frame, même sans changement détecté |
+| `analysis_fps` | 2 | Fréquence à laquelle ffmpeg décode pour l'analyse de diff (pas la fréquence de rétention) |
+| `diff_threshold` | 0.13 (13% de différence moyenne) | Seuil au-delà duquel une frame est considérée "changée" |
+| `max_interval_seconds` | 15 | Intervalle max sans retenir de frame, même sans changement détecté |
 
 ### 6.2 Séquence
 

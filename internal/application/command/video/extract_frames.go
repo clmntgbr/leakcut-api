@@ -23,13 +23,14 @@ type ExtractFramesCommand struct {
 }
 
 type ExtractFramesHandler struct {
-	videoRepo domainvideo.VideoWriteRepository
-	jobRepo   domainjob.JobWriteRepository
-	frameRepo domainframe.FrameWriteRepository
-	outbox    port.OutboxRepository
-	storage   port.Storage
-	extractor port.FrameExtractor
-	timeout   time.Duration
+	videoRepo  domainvideo.VideoWriteRepository
+	jobRepo    domainjob.JobWriteRepository
+	frameRepo  domainframe.FrameWriteRepository
+	outbox     port.OutboxRepository
+	storage    port.Storage
+	extractor  port.FrameExtractor
+	timeout    time.Duration
+	maxWidthPx int
 }
 
 func NewExtractFramesHandler(
@@ -40,15 +41,20 @@ func NewExtractFramesHandler(
 	storage port.Storage,
 	extractor port.FrameExtractor,
 	timeout time.Duration,
+	maxWidthPx int,
 ) *ExtractFramesHandler {
+	if maxWidthPx <= 0 {
+		maxWidthPx = domainjob.DefaultFrameMaxWidthPx
+	}
 	return &ExtractFramesHandler{
-		videoRepo: videoRepo,
-		jobRepo:   jobRepo,
-		frameRepo: frameRepo,
-		outbox:    outbox,
-		storage:   storage,
-		extractor: extractor,
-		timeout:   timeout,
+		videoRepo:  videoRepo,
+		jobRepo:    jobRepo,
+		frameRepo:  frameRepo,
+		outbox:     outbox,
+		storage:    storage,
+		extractor:  extractor,
+		timeout:    timeout,
+		maxWidthPx: maxWidthPx,
 	}
 }
 
@@ -158,6 +164,7 @@ func (h *ExtractFramesHandler) extractAndStore(
 		AnalysisFPS:        job.AnalysisFPS,
 		DiffThreshold:      job.DiffThreshold,
 		MaxIntervalSeconds: job.MaxIntervalSeconds,
+		MaxWidthPx:         h.maxWidthPx,
 	})
 	if err != nil {
 		return nil, messaging.NonRetryable(err)

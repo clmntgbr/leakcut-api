@@ -172,14 +172,16 @@ Publication **groupée** une fois tout le lot de frames traité (pas un événem
 | Paramètre | Défaut | Notes |
 |---|---|---|
 | `lang` | `fr+en` | PaddleOCR PP-OCRv6 couvre les deux dans un seul modèle, pas de switch de modèle nécessaire |
-| `OCR_BATCH_SIZE` | 8 | Taille d'un lot HTTP worker → sidecar |
-| `OCR_BATCH_CONCURRENCY` | 2 | Lots envoyés en parallèle par le worker (une même vidéo) |
-| `OCR_INFER_CONCURRENCY` | 2 | Engines RapidOCR (ONNX) dans le sidecar ; frames d'un lot inférées en parallèle. RAM × N |
+| `OCR_QUEUE` | `ocr` | Queue dédiée, binding `video.frames_extracted.v1` |
+| `OCR_BATCH_SIZE` | 8 | Taille d'un lot publié en `video.ocr_batch_completed.v1` |
+| `OCR_INFER_CONCURRENCY` | 2 | Engines RapidOCR (ONNX) ; frames d'une même vidéo inférées en parallèle. RAM × N |
+| `OCR_INTRA_OP_THREADS` | 2 | Threads onnxruntime / OpenMP par engine, bornés au CPU du container |
+| `FRAME_MAX_WIDTH_PX` | 1280 | Resize à l'extract (ffmpeg) ; les PNG MinIO sont déjà à cette largeur max |
 | `min_confidence` | 0.5 | En dessous, `OCRResult.Status = failed` plutôt que de faire remonter du texte non fiable au classifieur |
 | Accélération | OpenVINO (CPU) par défaut, GPU optionnel | Gain de vitesse CPU significatif sur PP-OCRv6 avec OpenVINO — suffisant pour du traitement par lot asynchrone, pas besoin de GPU dédié pour démarrer |
-| Replicas | 1 | `docker compose -f compose.dev.yaml up -d --scale ocr=2`. Le client HTTP désactive le keep-alive pour répartir les requêtes. Pas de `container_name` sur ce service. |
+| Replicas | 1 | `docker compose -f compose.dev.yaml up -d --scale ocr=2`. Une vidéo = un message ; le scale parallèle plusieurs vidéos. Pas de `container_name` sur ce service. |
 
-Sur une seule vidéo, monte d'abord `OCR_INFER_CONCURRENCY` puis `OCR_BATCH_CONCURRENCY`. Scale les replicas quand plusieurs jobs OCR tournent en même temps. Sur ARM, rester à 2 engines / 1 replica limite la RAM.
+Sur une seule vidéo, monte `OCR_INFER_CONCURRENCY`. Scale les replicas quand plusieurs jobs OCR tournent en même temps. Sur ARM, rester à 2 engines / 1 replica limite la RAM.
 
 **Chargement des modèles** : les poids ONNX RapidOCR sont téléchargés au build de `cmd/ocr` (pas au runtime) pour un démarrage rapide et un usage offline.
 
@@ -198,7 +200,7 @@ Sur une seule vidéo, monte d'abord `OCR_INFER_CONCURRENCY` puis `OCR_BATCH_CONC
 
 - **Confiance du texte, pas juste sa présence** : le seuil `min_confidence` évite de transmettre au classifieur du texte mal lu qui générerait de faux positifs (ou pire, de faux négatifs sur une clé API partiellement corrompue).
 - **Le service PaddleOCR est stateless** : les modèles sont chargés en mémoire au démarrage, aucune donnée persistée côté service — scalable horizontalement sans coordination.
-- **Décorrélation volontaire Go/Python** : le `ocr-worker` reste 100% Go comme le reste de la stack CQRS/event-driven ; seul le calcul d'inférence lourd sort en Python, encapsulé et invisible du reste du système (pas d'événement RabbitMQ publié par le service Python lui-même, uniquement par le worker Go).
+- **Décorrélation Go/Python** : le worker Python écoute RabbitMQ, télécharge MinIO, infère, et publie `video.ocr_batch_completed.v1`. Seul le worker Go écrit `ocr_results` / outbox.
 - **Vidéos très longues** : le traitement par lot permet de streamer les `OCRResult` en base au fil de l'eau plutôt que d'attendre la fin de toutes les frames avant la première écriture — utile pour une UI qui afficherait une progression en temps réel.
 
 ---
@@ -209,12 +211,12 @@ Chaque tâche a son propre `Job` (`internal/domain/job`) : `extract_frames` à l
 
 | Pièce | Emplacement |
 |---|---|
-| Worker Go | `cmd/worker` — handler `ocr_frames_on_frames_extracted` sur `video.frames_extracted.v1` |
-| Commande | `internal/application/command/video/ocr_frames.go` |
-| Service OCR | `cmd/ocr/` — FastAPI `POST /ocr` (RapidOCR + onnxruntime), pool de `OCR_INFER_CONCURRENCY` engines |
+| Worker OCR | `cmd/ocr/worker.py` — queue `ocr`, routing `video.frames_extracted.v1` |
+| Persist Go | `cmd/worker` — `start_ocr_on_frames_extracted` + `persist_ocr_batch` |
+| Commande | `internal/application/command/video/ocr_frames.go` (`Start` / `PersistBatch`) |
+| Inférence | RapidOCR + onnxruntime dans le worker Python |
 
-Paddle C++ SIGSEGV sur aarch64 : le sidecar n'embarque plus PaddlePaddle. Le contrat HTTP `POST /ocr` est inchangé.
-| Client HTTP | `internal/infrastructure/ocr/paddle.go` |
+Paddle C++ SIGSEGV sur aarch64 : plus de PaddlePaddle, plus d'API HTTP.
 | Persistance | `ocr_results` + compteurs `jobs.expected_frame_count` / `jobs.ocr_completed_count` (migration `00010`) |
-| Événement de sortie | `video.frames_ocr_completed.v1` (outbox → RabbitMQ) |
+| Événements | `video.ocr_batch_completed.v1` (Python → persist) puis `video.frames_ocr_completed.v1` (outbox, déclenche classify) |
 | Realtime | `job.updated` (`ocr_processing` / `ocr_ready` / `ocr_failed`) via le worker principal |

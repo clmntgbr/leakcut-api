@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	domainframe "go-api/internal/domain/frame"
+	domainjob "go-api/internal/domain/job"
 	"go-api/internal/domain/port"
 )
 
@@ -74,13 +75,16 @@ func (e *FrameExtractor) ExtractThumbnail(ctx context.Context, videoPath string)
 
 func (e *FrameExtractor) ExtractFrames(ctx context.Context, videoPath string, params port.FrameSelectionParams) ([]port.ExtractedFrame, error) {
 	if params.AnalysisFPS <= 0 {
-		params.AnalysisFPS = 3
+		params.AnalysisFPS = domainjob.DefaultAnalysisFPS
 	}
 	if params.DiffThreshold <= 0 {
-		params.DiffThreshold = 0.08
+		params.DiffThreshold = domainjob.DefaultDiffThreshold
 	}
 	if params.MaxIntervalSeconds <= 0 {
-		params.MaxIntervalSeconds = 10
+		params.MaxIntervalSeconds = domainjob.DefaultMaxIntervalSeconds
+	}
+	if params.MaxWidthPx <= 0 {
+		params.MaxWidthPx = domainjob.DefaultFrameMaxWidthPx
 	}
 
 	tmpDir, err := os.MkdirTemp("", "frame-extract-*")
@@ -95,7 +99,11 @@ func (e *FrameExtractor) ExtractFrames(ctx context.Context, videoPath string, pa
 		"ffmpeg",
 		"-y",
 		"-i", videoPath,
-		"-vf", fmt.Sprintf("fps=%s", strconv.FormatFloat(params.AnalysisFPS, 'f', -1, 64)),
+		"-vf", fmt.Sprintf(
+			"fps=%s,scale='min(%d,iw)':-2",
+			strconv.FormatFloat(params.AnalysisFPS, 'f', -1, 64),
+			params.MaxWidthPx,
+		),
 		pattern,
 	)
 	var stderr bytes.Buffer

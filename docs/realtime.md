@@ -27,7 +27,7 @@ Requires authentication.
 | `user.deleted` | User deleted |
 | `video.created` | Video created (`pending_upload`) |
 | `video.uploaded` | Upload confirmed (`extraction_queued`) |
-| `job.updated` | Job moved to `extracting_frames`, `frames_ready`, `ocr_processing`, `ocr_ready`, `ocr_failed`, `classifying`, `classified`, `classify_failed`, or `failed` |
+| `job.updated` | Job moved to `extracting_frames`, `frames_ready`, `ocr_processing` (also after each OCR batch, with `ocrCompletedCount`), `ocr_ready`, `ocr_failed`, `classifying`, `classified`, `classify_failed`, or `failed` |
 
 Video/job events are published only to the owner (`users:<userId>`). Webhook-ingested videos without a user are not pushed.
 

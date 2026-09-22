@@ -276,6 +276,28 @@ func (v *Video) MarkOCRProcessing(jobID uuid.UUID, jobType, jobStatus string, ex
 	}
 }
 
+func (v *Video) RecordOCRProgress(jobID uuid.UUID, jobType, jobStatus string, expected, completed int) error {
+	if v.Status != StatusOCRProcessing {
+		return nil
+	}
+
+	now := time.Now().UTC()
+	v.UpdatedAt = now
+	v.recordEvent(VideoOCRProcessing{
+		ID:                 uuid.New().String(),
+		VideoID:            v.ID.String(),
+		UserID:             v.ownerUserID(),
+		JobID:              jobID.String(),
+		JobType:            jobType,
+		Status:             v.Status,
+		JobStatus:          jobStatus,
+		ExpectedFrameCount: expected,
+		OCRCompletedCount:  completed,
+		Timestamp:          now,
+	})
+	return nil
+}
+
 func (v *Video) MarkOCRReady(jobID uuid.UUID, jobType, jobStatus string, expected, completed int, results []OCRFrameResultPayload) error {
 	if v.Status != StatusOCRProcessing && v.Status != StatusFramesReady {
 		if v.Status == StatusOCRReady {

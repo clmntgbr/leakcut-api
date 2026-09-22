@@ -3,6 +3,7 @@ package video
 import (
 	"context"
 	"encoding/json"
+	"log"
 
 	videocommand "go-api/internal/application/command/video"
 	"go-api/internal/application/messaging"
@@ -30,5 +31,12 @@ func (h *ExtractFramesOnUploadedHandler) Handle(ctx context.Context, payload []b
 		return messaging.NonRetryable(err)
 	}
 
-	return h.extract.Handle(ctx, videocommand.ExtractFramesCommand{VideoID: videoID})
+	log.Printf("frame worker received event type=%s videoId=%s", evt.EventType(), evt.VideoID)
+	log.Printf("frame worker processing videoId=%s", evt.VideoID)
+	if err := h.extract.Handle(ctx, videocommand.ExtractFramesCommand{VideoID: videoID}); err != nil {
+		log.Printf("frame worker failed videoId=%s: %v", evt.VideoID, err)
+		return err
+	}
+	log.Printf("frame worker finished videoId=%s", evt.VideoID)
+	return nil
 }

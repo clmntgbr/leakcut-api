@@ -10,6 +10,7 @@ const (
 	EventTypeVideoFramesExtracted       = "video.frames_extracted.v1"
 	EventTypeVideoFrameExtractionFailed = "video.frame_extraction_failed.v1"
 	EventTypeVideoOCRProcessing         = "video.ocr_processing.v1"
+	EventTypeVideoOCRBatchCompleted     = "video.ocr_batch_completed.v1"
 	EventTypeVideoFramesOCRCompleted    = "video.frames_ocr_completed.v1"
 	EventTypeVideoOCRFailed             = "video.ocr_failed.v1"
 	EventTypeVideoClassifying           = "video.classifying.v1"
@@ -139,6 +140,18 @@ func (e VideoOCRProcessing) EventID() string       { return e.ID }
 func (e VideoOCRProcessing) EventType() string     { return EventTypeVideoOCRProcessing }
 func (e VideoOCRProcessing) AggregateID() string   { return e.VideoID }
 func (e VideoOCRProcessing) OccurredAt() time.Time { return e.Timestamp }
+
+type VideoOCRBatchCompleted struct {
+	ID        string                  `json:"eventId"`
+	VideoID   string                  `json:"videoId"`
+	Results   []OCRFrameResultPayload `json:"results"`
+	Timestamp time.Time               `json:"timestamp"`
+}
+
+func (e VideoOCRBatchCompleted) EventID() string       { return e.ID }
+func (e VideoOCRBatchCompleted) EventType() string     { return EventTypeVideoOCRBatchCompleted }
+func (e VideoOCRBatchCompleted) AggregateID() string   { return e.VideoID }
+func (e VideoOCRBatchCompleted) OccurredAt() time.Time { return e.Timestamp }
 
 type OCRFrameResultPayload struct {
 	FrameID     string  `json:"frameId"`

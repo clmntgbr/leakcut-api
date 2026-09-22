@@ -51,15 +51,13 @@ type Config struct {
 	FrameRoutingKey         string
 	FrameConcurrency        int
 	FrameExtractionTimeout  time.Duration
+	FrameMaxWidthPx         int
 	ExpireUploadsInterval   time.Duration
 	VideoMaxSizeBytes       int64
-	OCRURL                  string
-	OCREngineTimeout        time.Duration
-	OCRBatchSize            int
-	OCRBatchConcurrency     int
+	OCRQueue                string
+	OCRRoutingKey           string
 	OCRMinConfidence        float64
 	OCRLang                 string
-	OCRTimeout              time.Duration
 	ClassifyQueue           string
 	ClassifyRoutingKey      string
 	ClassifyConcurrency     int
@@ -116,15 +114,13 @@ func Load() *Config {
 		FrameRoutingKey:         getEnvOrDefault("FRAME_ROUTING_KEY", "video.uploaded.v1"),
 		FrameConcurrency:        getEnvIntOrDefault("FRAME_CONCURRENCY", 2),
 		FrameExtractionTimeout:  getEnvDuration("FRAME_EXTRACTION_TIMEOUT", 10*time.Minute),
+		FrameMaxWidthPx:         getEnvIntOrDefault("FRAME_MAX_WIDTH_PX", 1280),
 		ExpireUploadsInterval:   getEnvDuration("EXPIRE_UPLOADS_INTERVAL", time.Minute),
 		VideoMaxSizeBytes:       getEnvInt64OrDefault("VIDEO_MAX_SIZE_BYTES", 2*1024*1024*1024),
-		OCRURL:                  getEnvOrDefault("OCR_URL", "http://ocr:8080"),
-		OCREngineTimeout:        getEnvDuration("OCR_ENGINE_TIMEOUT", 2*time.Minute),
-		OCRBatchSize:            getEnvIntOrDefault("OCR_BATCH_SIZE", 8),
-		OCRBatchConcurrency:     getEnvIntOrDefault("OCR_BATCH_CONCURRENCY", 2),
+		OCRQueue:                getEnvOrDefault("OCR_QUEUE", "ocr"),
+		OCRRoutingKey:           getEnvOrDefault("OCR_ROUTING_KEY", "video.frames_extracted.v1"),
 		OCRMinConfidence:        getEnvFloatOrDefault("OCR_MIN_CONFIDENCE", 0.5),
 		OCRLang:                 getEnvOrDefault("OCR_LANG", "fr+en"),
-		OCRTimeout:              getEnvDuration("OCR_TIMEOUT", 15*time.Minute),
 		ClassifyQueue:           getEnvOrDefault("CLASSIFY_QUEUE", "classify"),
 		ClassifyRoutingKey:      getEnvOrDefault("CLASSIFY_ROUTING_KEY", "video.frames_ocr_completed.v1"),
 		ClassifyConcurrency:     getEnvIntOrDefault("CLASSIFY_CONCURRENCY", 4),

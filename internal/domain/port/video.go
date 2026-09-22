@@ -6,6 +6,7 @@ type FrameSelectionParams struct {
 	AnalysisFPS        float64
 	DiffThreshold      float64
 	MaxIntervalSeconds int
+	MaxWidthPx         int
 }
 
 type ExtractedFrame struct {

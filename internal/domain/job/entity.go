@@ -26,9 +26,10 @@ const (
 )
 
 const (
-	DefaultAnalysisFPS        = 3.0
-	DefaultDiffThreshold      = 0.08
-	DefaultMaxIntervalSeconds = 10
+	DefaultAnalysisFPS        = 2.0
+	DefaultDiffThreshold      = 0.13
+	DefaultMaxIntervalSeconds = 15
+	DefaultFrameMaxWidthPx    = 1280
 )
 
 type Job struct {

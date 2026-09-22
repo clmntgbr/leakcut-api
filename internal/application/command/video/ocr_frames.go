@@ -3,9 +3,7 @@ package video
 import (
 	"context"
 	"errors"
-	"io"
 	"strings"
-	"sync"
 	"time"
 
 	"go-api/internal/application/messaging"
@@ -18,23 +16,22 @@ import (
 	"github.com/google/uuid"
 )
 
-type OCRFramesCommand struct {
+type StartOCRFramesCommand struct {
 	VideoID uuid.UUID
 }
 
+type PersistOCRBatchCommand struct {
+	VideoID uuid.UUID
+	Results []domainvideo.OCRFrameResultPayload
+}
+
 type OCRFramesHandler struct {
-	videoRepo        domainvideo.VideoWriteRepository
-	jobRepo          domainjob.JobWriteRepository
-	frameRepo        domainframe.FrameWriteRepository
-	ocrRepo          domainocr.ResultWriteRepository
-	outbox           port.OutboxRepository
-	storage          port.Storage
-	engine           port.OCREngine
-	batchSize        int
-	batchConcurrency int
-	minConfidence    float64
-	lang             string
-	timeout          time.Duration
+	videoRepo     domainvideo.VideoWriteRepository
+	jobRepo       domainjob.JobWriteRepository
+	frameRepo     domainframe.FrameWriteRepository
+	ocrRepo       domainocr.ResultWriteRepository
+	outbox        port.OutboxRepository
+	minConfidence float64
 }
 
 func NewOCRFramesHandler(
@@ -43,46 +40,48 @@ func NewOCRFramesHandler(
 	frameRepo domainframe.FrameWriteRepository,
 	ocrRepo domainocr.ResultWriteRepository,
 	outbox port.OutboxRepository,
-	storage port.Storage,
-	engine port.OCREngine,
-	batchSize int,
-	batchConcurrency int,
 	minConfidence float64,
-	lang string,
-	timeout time.Duration,
 ) *OCRFramesHandler {
-	if batchSize <= 0 {
-		batchSize = 8
-	}
-	if batchConcurrency <= 0 {
-		batchConcurrency = 2
-	}
-	if lang == "" {
-		lang = "fr+en"
-	}
 	return &OCRFramesHandler{
-		videoRepo:        videoRepo,
-		jobRepo:          jobRepo,
-		frameRepo:        frameRepo,
-		ocrRepo:          ocrRepo,
-		outbox:           outbox,
-		storage:          storage,
-		engine:           engine,
-		batchSize:        batchSize,
-		batchConcurrency: batchConcurrency,
-		minConfidence:    minConfidence,
-		lang:             lang,
-		timeout:          timeout,
+		videoRepo:     videoRepo,
+		jobRepo:       jobRepo,
+		frameRepo:     frameRepo,
+		ocrRepo:       ocrRepo,
+		outbox:        outbox,
+		minConfidence: minConfidence,
 	}
 }
 
-func (h *OCRFramesHandler) Handle(ctx context.Context, cmd OCRFramesCommand) error {
-	if h.timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, h.timeout)
-		defer cancel()
+func (h *OCRFramesHandler) Start(ctx context.Context, cmd StartOCRFramesCommand) error {
+	video, job, extractJob, err := h.load(ctx, cmd.VideoID)
+	if err != nil {
+		return err
+	}
+	if job.Status == domainjob.StatusOCRReady || video.Status == domainvideo.StatusOCRReady {
+		return nil
 	}
 
+	frames, err := h.frameRepo.ListByJobID(ctx, extractJob.ID)
+	if err != nil {
+		return h.failOrRetry(ctx, video, job, err, "failed to load frames")
+	}
+
+	existing, err := h.ocrRepo.ListByFrameIDs(ctx, frameIDs(frames))
+	if err != nil {
+		return h.failOrRetry(ctx, video, job, err, "failed to load ocr results")
+	}
+	if err := h.markProcessing(ctx, video, job, len(frames), countFinal(existing)); err != nil {
+		return err
+	}
+	if len(frames) == 0 {
+		if err := h.markReady(ctx, video, job, frames, existing); err != nil {
+			return messaging.Retryable(err)
+		}
+	}
+	return nil
+}
+
+func (h *OCRFramesHandler) PersistBatch(ctx context.Context, cmd PersistOCRBatchCommand) error {
 	video, job, extractJob, err := h.load(ctx, cmd.VideoID)
 	if err != nil {
 		return err
@@ -102,13 +101,15 @@ func (h *OCRFramesHandler) Handle(ctx context.Context, cmd OCRFramesCommand) err
 	}
 	known := resultsByFrame(existing)
 
-	if err := h.markProcessing(ctx, video, job, len(frames), len(known)); err != nil {
-		return err
+	if video.Status == domainvideo.StatusFramesReady || job.Status == domainjob.StatusPending {
+		if err := h.markProcessing(ctx, video, job, len(frames), countFinal(existing)); err != nil {
+			return err
+		}
 	}
 
-	pending := pendingFrames(frames, existing)
-	if err := h.processBatches(ctx, video, job, pending, known); err != nil {
-		return err
+	incoming := h.normalizePayloads(cmd.Results)
+	if err := h.persistBatch(ctx, video, job, incoming, known); err != nil {
+		return h.failOrRetry(ctx, video, job, err, "failed to persist ocr results")
 	}
 
 	stored, err := h.ocrRepo.ListByFrameIDs(ctx, frameIDs(frames))
@@ -116,7 +117,7 @@ func (h *OCRFramesHandler) Handle(ctx context.Context, cmd OCRFramesCommand) err
 		return h.failOrRetry(ctx, video, job, err, "failed to load ocr results")
 	}
 	if len(stored) < len(frames) {
-		return h.failOrRetry(ctx, video, job, errors.New("ocr incomplete"), "ocr incomplete")
+		return nil
 	}
 	if err := h.markReady(ctx, video, job, frames, stored); err != nil {
 		return messaging.Retryable(err)
@@ -180,80 +181,9 @@ func (h *OCRFramesHandler) markProcessing(
 	return nil
 }
 
-func (h *OCRFramesHandler) processBatches(
-	ctx context.Context,
-	video *domainvideo.Video,
-	job *domainjob.Job,
-	pending []*domainframe.Frame,
-	known map[uuid.UUID]*domainocr.Result,
-) error {
-	batches := chunkFrames(pending, h.batchSize)
-	if len(batches) == 0 {
-		return nil
-	}
-
-	concurrency := h.batchConcurrency
-	if concurrency < 1 {
-		concurrency = 1
-	}
-	if concurrency > len(batches) {
-		concurrency = len(batches)
-	}
-
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	sem := make(chan struct{}, concurrency)
-	var wg sync.WaitGroup
-	var persistMu sync.Mutex
-	var once sync.Once
-	var firstErr error
-	var firstReason string
-
-	report := func(err error, reason string) {
-		once.Do(func() {
-			firstErr = err
-			firstReason = reason
-			cancel()
-		})
-	}
-
-	for _, batch := range batches {
-		if runCtx.Err() != nil {
-			break
-		}
-		wg.Add(1)
-		go func(batch []*domainframe.Frame) {
-			defer wg.Done()
-			select {
-			case <-runCtx.Done():
-				return
-			case sem <- struct{}{}:
-			}
-			defer func() { <-sem }()
-
-			results, recErr := h.recognizeBatch(runCtx, batch)
-			if recErr != nil {
-				report(recErr, "ocr service unavailable")
-				return
-			}
-
-			persistMu.Lock()
-			defer persistMu.Unlock()
-			if err := h.persistBatch(ctx, job, results, known); err != nil {
-				report(err, "failed to persist ocr results")
-			}
-		}(batch)
-	}
-	wg.Wait()
-	if firstErr != nil {
-		return h.failOrRetry(ctx, video, job, firstErr, firstReason)
-	}
-	return nil
-}
-
 func (h *OCRFramesHandler) persistBatch(
 	ctx context.Context,
+	video *domainvideo.Video,
 	job *domainjob.Job,
 	results []*domainocr.Result,
 	known map[uuid.UUID]*domainocr.Result,
@@ -263,17 +193,26 @@ func (h *OCRFramesHandler) persistBatch(
 	}
 	added := 0
 	for _, result := range results {
-		if _, exists := known[result.FrameID]; !exists {
+		if existing, ok := known[result.FrameID]; !ok || !existing.IsFinal() {
 			added++
 		}
 	}
 	previousCompleted := job.OCRCompletedCount
 	job.AddOCRCompleted(added)
+	if added > 0 {
+		if err := video.RecordOCRProgress(job.ID, job.Type, job.Status, job.ExpectedFrameCount, job.OCRCompletedCount); err != nil {
+			job.OCRCompletedCount = previousCompleted
+			return err
+		}
+	}
 	err := h.videoRepo.WithTransaction(ctx, func(txCtx context.Context) error {
 		if err := h.ocrRepo.UpsertAll(txCtx, results); err != nil {
 			return err
 		}
-		return h.jobRepo.Update(txCtx, job)
+		if err := h.jobRepo.Update(txCtx, job); err != nil {
+			return err
+		}
+		return h.outbox.StoreEvents(txCtx, video.PullEvents())
 	})
 	if err != nil {
 		job.OCRCompletedCount = previousCompleted
@@ -357,68 +296,20 @@ func (h *OCRFramesHandler) markReady(
 	})
 }
 
-func (h *OCRFramesHandler) recognizeBatch(ctx context.Context, frames []*domainframe.Frame) ([]*domainocr.Result, error) {
-	images := make([]port.OCRImage, 0, len(frames))
-	isolated := make([]*domainocr.Result, 0)
-
-	for _, frame := range frames {
-		data, err := h.downloadFrame(ctx, frame.StorageKey)
-		if err != nil {
-			isolated = append(isolated, domainocr.NewResult(
-				frame.ID,
-				"",
-				0,
-				domainocr.StatusFailed,
-				"frame download failed",
-			))
-			continue
-		}
-		images = append(images, port.OCRImage{FrameID: frame.ID.String(), Data: data})
-	}
-
-	if len(images) == 0 {
-		return isolated, nil
-	}
-
-	raw, err := h.engine.Recognize(ctx, images, h.lang)
-	if err != nil {
-		return nil, err
-	}
-
-	byFrame := make(map[string]port.OCRItemResult, len(raw))
-	for _, item := range raw {
-		byFrame[item.FrameID] = item
-	}
-
-	out := make([]*domainocr.Result, 0, len(frames))
-	out = append(out, isolated...)
-	for _, image := range images {
-		frameID, err := uuid.Parse(image.FrameID)
+func (h *OCRFramesHandler) normalizePayloads(items []domainvideo.OCRFrameResultPayload) []*domainocr.Result {
+	out := make([]*domainocr.Result, 0, len(items))
+	for _, item := range items {
+		frameID, err := uuid.Parse(item.FrameID)
 		if err != nil {
 			continue
 		}
-		item, ok := byFrame[image.FrameID]
-		if !ok {
-			out = append(out, domainocr.NewResult(frameID, "", 0, domainocr.StatusFailed, "missing ocr result"))
-			continue
-		}
-		out = append(out, h.normalizeResult(frameID, item))
+		out = append(out, h.normalizeResult(frameID, item.Text, item.Confidence, item.Status))
 	}
-	return out, nil
+	return out
 }
 
-func (h *OCRFramesHandler) downloadFrame(ctx context.Context, key string) ([]byte, error) {
-	reader, err := h.storage.Get(ctx, key)
-	if err != nil {
-		return nil, err
-	}
-	defer reader.Close()
-	return io.ReadAll(reader)
-}
-
-func (h *OCRFramesHandler) normalizeResult(frameID uuid.UUID, item port.OCRItemResult) *domainocr.Result {
-	text := strings.TrimSpace(item.Text)
-	status := item.Status
+func (h *OCRFramesHandler) normalizeResult(frameID uuid.UUID, text string, confidence float64, status string) *domainocr.Result {
+	text = strings.TrimSpace(text)
 	if status == "" {
 		if text == "" {
 			status = domainocr.StatusEmpty
@@ -429,17 +320,17 @@ func (h *OCRFramesHandler) normalizeResult(frameID uuid.UUID, item port.OCRItemR
 
 	switch status {
 	case domainocr.StatusFailed:
-		return domainocr.NewResult(frameID, "", item.Confidence, domainocr.StatusFailed, "ocr engine failed")
+		return domainocr.NewResult(frameID, "", confidence, domainocr.StatusFailed, "ocr engine failed")
 	case domainocr.StatusEmpty:
 		return domainocr.NewResult(frameID, "", 0, domainocr.StatusEmpty, "")
 	default:
 		if text == "" {
 			return domainocr.NewResult(frameID, "", 0, domainocr.StatusEmpty, "")
 		}
-		if h.minConfidence > 0 && item.Confidence < h.minConfidence {
-			return domainocr.NewResult(frameID, "", item.Confidence, domainocr.StatusFailed, "low_confidence")
+		if h.minConfidence > 0 && confidence < h.minConfidence {
+			return domainocr.NewResult(frameID, "", confidence, domainocr.StatusFailed, "low_confidence")
 		}
-		return domainocr.NewResult(frameID, text, item.Confidence, domainocr.StatusSuccess, "")
+		return domainocr.NewResult(frameID, text, confidence, domainocr.StatusSuccess, "")
 	}
 }
 
@@ -459,37 +350,14 @@ func resultsByFrame(results []*domainocr.Result) map[uuid.UUID]*domainocr.Result
 	return out
 }
 
-func pendingFrames(frames []*domainframe.Frame, results []*domainocr.Result) []*domainframe.Frame {
-	done := make(map[uuid.UUID]struct{}, len(results))
+func countFinal(results []*domainocr.Result) int {
+	n := 0
 	for _, result := range results {
 		if result.IsFinal() {
-			done[result.FrameID] = struct{}{}
+			n++
 		}
 	}
-
-	pending := make([]*domainframe.Frame, 0, len(frames))
-	for _, frame := range frames {
-		if _, ok := done[frame.ID]; ok {
-			continue
-		}
-		pending = append(pending, frame)
-	}
-	return pending
-}
-
-func chunkFrames(frames []*domainframe.Frame, size int) [][]*domainframe.Frame {
-	if len(frames) == 0 {
-		return nil
-	}
-	out := make([][]*domainframe.Frame, 0, (len(frames)+size-1)/size)
-	for i := 0; i < len(frames); i += size {
-		end := i + size
-		if end > len(frames) {
-			end = len(frames)
-		}
-		out = append(out, frames[i:end])
-	}
-	return out
+	return n
 }
 
 func toOCRPayloads(frames []*domainframe.Frame, results []*domainocr.Result) []domainvideo.OCRFrameResultPayload {

@@ -56,6 +56,7 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 		minioStorage,
 		infraVideo.NewFrameExtractor(),
 		env.FrameExtractionTimeout,
+		env.FrameMaxWidthPx,
 	)
 
 	reg := registry.NewHandlerRegistry()

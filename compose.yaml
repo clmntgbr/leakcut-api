@@ -28,7 +28,6 @@ services:
       context: .
       dockerfile: Dockerfile
       target: production
-    container_name: frame
     command: ["./frame"]
     env_file:
       - .env
@@ -39,13 +38,20 @@ services:
       context: ./cmd/ocr
       dockerfile: Dockerfile
     shm_size: "1gb"
+    env_file:
+      - .env
     environment:
       OCR_LANG: ${OCR_LANG:-fr+en}
+      OCR_QUEUE: ${OCR_QUEUE:-ocr}
+      OCR_ROUTING_KEY: ${OCR_ROUTING_KEY:-video.frames_extracted.v1}
       OCR_INFER_CONCURRENCY: ${OCR_INFER_CONCURRENCY:-2}
+      OCR_INTRA_OP_THREADS: ${OCR_INTRA_OP_THREADS:-2}
+      OCR_BATCH_SIZE: ${OCR_BATCH_SIZE:-8}
+      OCR_CONCURRENCY: ${OCR_CONCURRENCY:-1}
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
-      interval: 30s
-      timeout: 5s
+      test: ["CMD", "test", "-f", "/tmp/ocr-ready"]
+      interval: 10s
+      timeout: 3s
       retries: 10
       start_period: 60s
     restart: unless-stopped
