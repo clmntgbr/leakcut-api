@@ -98,6 +98,11 @@ func sampleVideoView() *domainvideo.VideoView {
 		JobID:            &jobID,
 		JobStatus:        "pending",
 		FrameCount:       0,
+		Jobs: []domainvideo.JobView{{
+			ID:     jobID,
+			Type:   "extract_frames",
+			Status: "pending",
+		}},
 	}
 }
 

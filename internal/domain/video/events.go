@@ -9,6 +9,9 @@ const (
 	EventTypeVideoExtracting            = "video.extracting.v1"
 	EventTypeVideoFramesExtracted       = "video.frames_extracted.v1"
 	EventTypeVideoFrameExtractionFailed = "video.frame_extraction_failed.v1"
+	EventTypeVideoOCRProcessing         = "video.ocr_processing.v1"
+	EventTypeVideoFramesOCRCompleted    = "video.frames_ocr_completed.v1"
+	EventTypeVideoOCRFailed             = "video.ocr_failed.v1"
 	EventTypeVideoUploadExpired         = "video.upload_expired.v1"
 )
 
@@ -61,6 +64,7 @@ type VideoExtracting struct {
 	VideoID   string    `json:"videoId"`
 	UserID    string    `json:"userId,omitempty"`
 	JobID     string    `json:"jobId"`
+	JobType   string    `json:"jobType,omitempty"`
 	Status    string    `json:"status"`
 	JobStatus string    `json:"jobStatus"`
 	Timestamp time.Time `json:"timestamp"`
@@ -72,6 +76,7 @@ func (e VideoExtracting) AggregateID() string   { return e.VideoID }
 func (e VideoExtracting) OccurredAt() time.Time { return e.Timestamp }
 
 type ExtractedFramePayload struct {
+	ID              string  `json:"id,omitempty"`
 	Index           int     `json:"index"`
 	TimestampMs     int64   `json:"timestampMs"`
 	StorageKey      string  `json:"storageKey"`
@@ -84,6 +89,7 @@ type VideoFramesExtracted struct {
 	VideoID    string                  `json:"videoId"`
 	UserID     string                  `json:"userId,omitempty"`
 	JobID      string                  `json:"jobId"`
+	JobType    string                  `json:"jobType,omitempty"`
 	Status     string                  `json:"status"`
 	JobStatus  string                  `json:"jobStatus"`
 	FrameCount int                     `json:"frameCount"`
@@ -101,6 +107,7 @@ type VideoFrameExtractionFailed struct {
 	VideoID   string    `json:"videoId"`
 	UserID    string    `json:"userId,omitempty"`
 	JobID     string    `json:"jobId"`
+	JobType   string    `json:"jobType,omitempty"`
 	Status    string    `json:"status"`
 	JobStatus string    `json:"jobStatus"`
 	Reason    string    `json:"reason"`
@@ -111,6 +118,71 @@ func (e VideoFrameExtractionFailed) EventID() string       { return e.ID }
 func (e VideoFrameExtractionFailed) EventType() string     { return EventTypeVideoFrameExtractionFailed }
 func (e VideoFrameExtractionFailed) AggregateID() string   { return e.VideoID }
 func (e VideoFrameExtractionFailed) OccurredAt() time.Time { return e.Timestamp }
+
+type VideoOCRProcessing struct {
+	ID                 string    `json:"eventId"`
+	VideoID            string    `json:"videoId"`
+	UserID             string    `json:"userId,omitempty"`
+	JobID              string    `json:"jobId"`
+	JobType            string    `json:"jobType,omitempty"`
+	Status             string    `json:"status"`
+	JobStatus          string    `json:"jobStatus"`
+	ExpectedFrameCount int       `json:"expectedFrameCount"`
+	OCRCompletedCount  int       `json:"ocrCompletedCount"`
+	Timestamp          time.Time `json:"timestamp"`
+}
+
+func (e VideoOCRProcessing) EventID() string       { return e.ID }
+func (e VideoOCRProcessing) EventType() string     { return EventTypeVideoOCRProcessing }
+func (e VideoOCRProcessing) AggregateID() string   { return e.VideoID }
+func (e VideoOCRProcessing) OccurredAt() time.Time { return e.Timestamp }
+
+type OCRFrameResultPayload struct {
+	FrameID     string  `json:"frameId"`
+	FrameIndex  int     `json:"frameIndex"`
+	TimestampMs int64   `json:"timestampMs"`
+	Text        string  `json:"text"`
+	Confidence  float64 `json:"confidence"`
+	Status      string  `json:"status"`
+}
+
+type VideoFramesOCRCompleted struct {
+	ID                 string                  `json:"eventId"`
+	VideoID            string                  `json:"videoId"`
+	UserID             string                  `json:"userId,omitempty"`
+	JobID              string                  `json:"jobId"`
+	JobType            string                  `json:"jobType,omitempty"`
+	Status             string                  `json:"status"`
+	JobStatus          string                  `json:"jobStatus"`
+	ExpectedFrameCount int                     `json:"expectedFrameCount"`
+	OCRCompletedCount  int                     `json:"ocrCompletedCount"`
+	Results            []OCRFrameResultPayload `json:"results"`
+	Timestamp          time.Time               `json:"timestamp"`
+}
+
+func (e VideoFramesOCRCompleted) EventID() string       { return e.ID }
+func (e VideoFramesOCRCompleted) EventType() string     { return EventTypeVideoFramesOCRCompleted }
+func (e VideoFramesOCRCompleted) AggregateID() string   { return e.VideoID }
+func (e VideoFramesOCRCompleted) OccurredAt() time.Time { return e.Timestamp }
+
+type VideoOCRFailed struct {
+	ID                 string    `json:"eventId"`
+	VideoID            string    `json:"videoId"`
+	UserID             string    `json:"userId,omitempty"`
+	JobID              string    `json:"jobId"`
+	JobType            string    `json:"jobType,omitempty"`
+	Status             string    `json:"status"`
+	JobStatus          string    `json:"jobStatus"`
+	Reason             string    `json:"reason"`
+	ExpectedFrameCount int       `json:"expectedFrameCount"`
+	OCRCompletedCount  int       `json:"ocrCompletedCount"`
+	Timestamp          time.Time `json:"timestamp"`
+}
+
+func (e VideoOCRFailed) EventID() string       { return e.ID }
+func (e VideoOCRFailed) EventType() string     { return EventTypeVideoOCRFailed }
+func (e VideoOCRFailed) AggregateID() string   { return e.VideoID }
+func (e VideoOCRFailed) OccurredAt() time.Time { return e.Timestamp }
 
 type VideoUploadExpired struct {
 	ID        string    `json:"eventId"`

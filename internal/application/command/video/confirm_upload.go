@@ -53,12 +53,12 @@ func (h *ConfirmUploadHandler) Handle(ctx context.Context, cmd ConfirmUploadComm
 			return err
 		}
 
-		existingJob, err := h.jobRepo.GetByVideoID(txCtx, video.ID)
+		existingJob, err := h.jobRepo.GetByVideoIDAndType(txCtx, video.ID, domainjob.TypeExtractFrames)
 		if err != nil {
 			return err
 		}
 		if existingJob == nil {
-			if err := h.jobRepo.Save(txCtx, domainjob.NewJob(video.ID)); err != nil {
+			if err := h.jobRepo.Save(txCtx, domainjob.NewExtractFramesJob(video.ID)); err != nil {
 				return err
 			}
 		}

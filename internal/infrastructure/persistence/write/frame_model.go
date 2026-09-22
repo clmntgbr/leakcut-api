@@ -31,3 +31,15 @@ func frameModelFromDomain(f *domainframe.Frame) *FrameModel {
 		DiffScore:       f.DiffScore,
 	}
 }
+
+func frameDomainFromModel(m *FrameModel) *domainframe.Frame {
+	return &domainframe.Frame{
+		ID:              m.ID,
+		JobID:           m.JobID,
+		Index:           m.Index,
+		TimestampMs:     m.TimestampMs,
+		StorageKey:      m.StorageKey,
+		SelectionReason: m.SelectionReason,
+		DiffScore:       m.DiffScore,
+	}
+}

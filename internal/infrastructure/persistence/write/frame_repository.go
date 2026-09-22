@@ -36,6 +36,22 @@ func (r *frameWriteRepository) UpsertAll(ctx context.Context, frames []*domainfr
 		Create(&rows).Error
 }
 
+func (r *frameWriteRepository) ListByJobID(ctx context.Context, jobID uuid.UUID) ([]*domainframe.Frame, error) {
+	var rows []FrameModel
+	if err := DBWithContext(ctx, r.db).
+		Where("job_id = ?", jobID).
+		Order(`"index" ASC`).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	out := make([]*domainframe.Frame, 0, len(rows))
+	for i := range rows {
+		out = append(out, frameDomainFromModel(&rows[i]))
+	}
+	return out, nil
+}
+
 func (r *frameWriteRepository) CountByJobID(ctx context.Context, jobID uuid.UUID) (int, error) {
 	var count int64
 	err := DBWithContext(ctx, r.db).Model(&FrameModel{}).Where("job_id = ?", jobID).Count(&count).Error

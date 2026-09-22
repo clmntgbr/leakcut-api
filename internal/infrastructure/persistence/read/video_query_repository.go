@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	domainjob "go-api/internal/domain/job"
 	"go-api/internal/domain/paginate"
 	domainvideo "go-api/internal/domain/video"
 
@@ -14,19 +15,24 @@ import (
 )
 
 type videoViewRow struct {
-	ID               uuid.UUID
-	OriginalFilename string
-	StorageKey       string
-	ThumbnailKey     string
-	SizeBytes        int64
-	ContentType      string
-	Status           string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	JobID            *uuid.UUID
-	JobStatus        string
-	FrameCount       int
-	FailureReason    string
+	ID                   uuid.UUID
+	OriginalFilename     string
+	StorageKey           string
+	ThumbnailKey         string
+	SizeBytes            int64
+	ContentType          string
+	Status               string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	ExtractJobID         *uuid.UUID
+	ExtractJobStatus     string
+	ExtractFailureReason string
+	OCRJobID             *uuid.UUID
+	OCRJobStatus         string
+	OCRFailureReason     string
+	FrameCount           int
+	ExpectedFrameCount   int
+	OCRCompletedCount    int
 }
 
 func (videoViewRow) TableName() string { return "videos" }
@@ -53,12 +59,18 @@ func (r *videoReadRepository) FindByID(ctx context.Context, id, userID uuid.UUID
 			videos.status,
 			videos.created_at,
 			videos.updated_at,
-			jobs.id AS job_id,
-			jobs.status AS job_status,
-			jobs.failure_reason,
-			COALESCE((SELECT COUNT(*) FROM frames WHERE frames.job_id = jobs.id), 0) AS frame_count
+			extract_jobs.id AS extract_job_id,
+			extract_jobs.status AS extract_job_status,
+			extract_jobs.failure_reason AS extract_failure_reason,
+			ocr_jobs.id AS ocr_job_id,
+			ocr_jobs.status AS ocr_job_status,
+			ocr_jobs.failure_reason AS ocr_failure_reason,
+			COALESCE(ocr_jobs.expected_frame_count, 0) AS expected_frame_count,
+			COALESCE(ocr_jobs.ocr_completed_count, 0) AS ocr_completed_count,
+			COALESCE((SELECT COUNT(*) FROM frames WHERE frames.job_id = extract_jobs.id), 0) AS frame_count
 		`).
-		Joins("LEFT JOIN jobs ON jobs.video_id = videos.id").
+		Joins("LEFT JOIN jobs extract_jobs ON extract_jobs.video_id = videos.id AND extract_jobs.type = ?", domainjob.TypeExtractFrames).
+		Joins("LEFT JOIN jobs ocr_jobs ON ocr_jobs.video_id = videos.id AND ocr_jobs.type = ?", domainjob.TypeOCR).
 		Where("videos.id = ? AND videos.user_id = ?", id, userID).
 		Take(&row).Error
 	if err != nil {
@@ -68,21 +80,58 @@ func (r *videoReadRepository) FindByID(ctx context.Context, id, userID uuid.UUID
 		return nil, err
 	}
 
+	return videoViewFromRow(row), nil
+}
+
+func videoViewFromRow(row videoViewRow) *domainvideo.VideoView {
+	jobs := make([]domainvideo.JobView, 0, 2)
+	if row.ExtractJobID != nil {
+		jobs = append(jobs, domainvideo.JobView{
+			ID:            *row.ExtractJobID,
+			Type:          domainjob.TypeExtractFrames,
+			Status:        row.ExtractJobStatus,
+			FrameCount:    row.FrameCount,
+			FailureReason: row.ExtractFailureReason,
+		})
+	}
+	if row.OCRJobID != nil {
+		jobs = append(jobs, domainvideo.JobView{
+			ID:                 *row.OCRJobID,
+			Type:               domainjob.TypeOCR,
+			Status:             row.OCRJobStatus,
+			ExpectedFrameCount: row.ExpectedFrameCount,
+			OCRCompletedCount:  row.OCRCompletedCount,
+			FailureReason:      row.OCRFailureReason,
+		})
+	}
+
+	currentID := row.ExtractJobID
+	currentStatus := row.ExtractJobStatus
+	failureReason := row.ExtractFailureReason
+	if row.OCRJobID != nil {
+		currentID = row.OCRJobID
+		currentStatus = row.OCRJobStatus
+		failureReason = row.OCRFailureReason
+	}
+
 	return &domainvideo.VideoView{
-		ID:               row.ID,
-		OriginalFilename: row.OriginalFilename,
-		StorageKey:       row.StorageKey,
-		ThumbnailKey:     row.ThumbnailKey,
-		SizeBytes:        row.SizeBytes,
-		ContentType:      row.ContentType,
-		Status:           row.Status,
-		CreatedAt:        row.CreatedAt,
-		UpdatedAt:        row.UpdatedAt,
-		JobID:            row.JobID,
-		JobStatus:        row.JobStatus,
-		FrameCount:       row.FrameCount,
-		FailureReason:    row.FailureReason,
-	}, nil
+		ID:                 row.ID,
+		OriginalFilename:   row.OriginalFilename,
+		StorageKey:         row.StorageKey,
+		ThumbnailKey:       row.ThumbnailKey,
+		SizeBytes:          row.SizeBytes,
+		ContentType:        row.ContentType,
+		Status:             row.Status,
+		CreatedAt:          row.CreatedAt,
+		UpdatedAt:          row.UpdatedAt,
+		JobID:              currentID,
+		JobStatus:          currentStatus,
+		FrameCount:         row.FrameCount,
+		ExpectedFrameCount: row.ExpectedFrameCount,
+		OCRCompletedCount:  row.OCRCompletedCount,
+		FailureReason:      failureReason,
+		Jobs:               jobs,
+	}
 }
 
 type videoListRow struct {

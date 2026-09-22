@@ -24,21 +24,34 @@ type VideoReadRepository interface {
 	List(ctx context.Context, userID uuid.UUID, query paginate.PaginateQuery) ([]VideoListView, int64, error)
 }
 
+type JobView struct {
+	ID                 uuid.UUID
+	Type               string
+	Status             string
+	FrameCount         int
+	ExpectedFrameCount int
+	OCRCompletedCount  int
+	FailureReason      string
+}
+
 type VideoView struct {
-	ID               uuid.UUID
-	OriginalFilename string
-	StorageKey       string
-	ThumbnailKey     string
-	ThumbnailURL     string
-	SizeBytes        int64
-	ContentType      string
-	Status           string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	JobID            *uuid.UUID
-	JobStatus        string
-	FrameCount       int
-	FailureReason    string
+	ID                 uuid.UUID
+	OriginalFilename   string
+	StorageKey         string
+	ThumbnailKey       string
+	ThumbnailURL       string
+	SizeBytes          int64
+	ContentType        string
+	Status             string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	JobID              *uuid.UUID
+	JobStatus          string
+	FrameCount         int
+	ExpectedFrameCount int
+	OCRCompletedCount  int
+	FailureReason      string
+	Jobs               []JobView
 }
 
 type VideoListView struct {

@@ -138,6 +138,21 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 		"publish_video_extraction_failed_realtime",
 		publishVideoRealtime.OnExtractionFailed,
 	))
+	reg.Register(domainvideo.EventTypeVideoOCRProcessing, dedup.With(
+		dedupRepo,
+		"publish_video_ocr_processing_realtime",
+		publishVideoRealtime.OnOCRProcessing,
+	))
+	reg.Register(domainvideo.EventTypeVideoFramesOCRCompleted, dedup.With(
+		dedupRepo,
+		"publish_video_ocr_completed_realtime",
+		publishVideoRealtime.OnOCRCompleted,
+	))
+	reg.Register(domainvideo.EventTypeVideoOCRFailed, dedup.With(
+		dedupRepo,
+		"publish_video_ocr_failed_realtime",
+		publishVideoRealtime.OnOCRFailed,
+	))
 
 	consumer := rabbitmq.NewConsumer(conn, reg, env.WorkerConcurrency, env.WorkerMaxRetries)
 

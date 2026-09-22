@@ -135,7 +135,8 @@ func (v *Video) MarkUploaded(contentType string, sizeBytes int64) error {
 			Timestamp:   now,
 		})
 		return nil
-	case StatusUploaded, StatusExtractionQueued, StatusExtracting, StatusFramesReady:
+	case StatusUploaded, StatusExtractionQueued, StatusExtracting, StatusFramesReady,
+		StatusOCRProcessing, StatusOCRReady, StatusOCRFailed:
 		if contentType != "" {
 			v.ContentType = contentType
 		}
@@ -155,14 +156,15 @@ func (v *Video) MarkExtractionQueued() error {
 		v.Status = StatusExtractionQueued
 		v.UpdatedAt = time.Now().UTC()
 		return nil
-	case StatusExtractionQueued, StatusExtracting, StatusFramesReady, StatusExtractionFailed:
+	case StatusExtractionQueued, StatusExtracting, StatusFramesReady, StatusExtractionFailed,
+		StatusOCRProcessing, StatusOCRReady, StatusOCRFailed:
 		return nil
 	default:
 		return ErrInvalidTransition
 	}
 }
 
-func (v *Video) MarkExtracting(jobID uuid.UUID, jobStatus string) error {
+func (v *Video) MarkExtracting(jobID uuid.UUID, jobType, jobStatus string) error {
 	switch v.Status {
 	case StatusUploaded, StatusExtractionQueued, StatusExtractionFailed:
 		now := time.Now().UTC()
@@ -173,6 +175,7 @@ func (v *Video) MarkExtracting(jobID uuid.UUID, jobStatus string) error {
 			VideoID:   v.ID.String(),
 			UserID:    v.ownerUserID(),
 			JobID:     jobID.String(),
+			JobType:   jobType,
 			Status:    v.Status,
 			JobStatus: jobStatus,
 			Timestamp: now,
@@ -185,7 +188,7 @@ func (v *Video) MarkExtracting(jobID uuid.UUID, jobStatus string) error {
 	}
 }
 
-func (v *Video) MarkFramesReady(jobID uuid.UUID, jobStatus string, frames []ExtractedFramePayload) error {
+func (v *Video) MarkFramesReady(jobID uuid.UUID, jobType, jobStatus string, frames []ExtractedFramePayload) error {
 	if v.Status != StatusExtracting && v.Status != StatusExtractionQueued && v.Status != StatusUploaded {
 		if v.Status == StatusFramesReady {
 			return nil
@@ -201,6 +204,7 @@ func (v *Video) MarkFramesReady(jobID uuid.UUID, jobStatus string, frames []Extr
 		VideoID:    v.ID.String(),
 		UserID:     v.ownerUserID(),
 		JobID:      jobID.String(),
+		JobType:    jobType,
 		Status:     v.Status,
 		JobStatus:  jobStatus,
 		FrameCount: len(frames),
@@ -210,7 +214,7 @@ func (v *Video) MarkFramesReady(jobID uuid.UUID, jobStatus string, frames []Extr
 	return nil
 }
 
-func (v *Video) MarkExtractionFailed(jobID uuid.UUID, jobStatus, reason string) error {
+func (v *Video) MarkExtractionFailed(jobID uuid.UUID, jobType, jobStatus, reason string) error {
 	switch v.Status {
 	case StatusExtracting, StatusExtractionQueued, StatusUploaded:
 	case StatusExtractionFailed:
@@ -227,6 +231,7 @@ func (v *Video) MarkExtractionFailed(jobID uuid.UUID, jobStatus, reason string) 
 		VideoID:   v.ID.String(),
 		UserID:    v.ownerUserID(),
 		JobID:     jobID.String(),
+		JobType:   jobType,
 		Status:    v.Status,
 		JobStatus: jobStatus,
 		Reason:    reason,
@@ -241,6 +246,87 @@ func (v *Video) SetThumbnailKey(key string) {
 	}
 	v.ThumbnailKey = key
 	v.UpdatedAt = time.Now().UTC()
+}
+
+func (v *Video) MarkOCRProcessing(jobID uuid.UUID, jobType, jobStatus string, expected, completed int) error {
+	switch v.Status {
+	case StatusFramesReady, StatusOCRFailed:
+		now := time.Now().UTC()
+		v.Status = StatusOCRProcessing
+		v.UpdatedAt = now
+		v.recordEvent(VideoOCRProcessing{
+			ID:                 uuid.New().String(),
+			VideoID:            v.ID.String(),
+			UserID:             v.ownerUserID(),
+			JobID:              jobID.String(),
+			JobType:            jobType,
+			Status:             v.Status,
+			JobStatus:          jobStatus,
+			ExpectedFrameCount: expected,
+			OCRCompletedCount:  completed,
+			Timestamp:          now,
+		})
+		return nil
+	case StatusOCRProcessing:
+		return nil
+	default:
+		return ErrInvalidTransition
+	}
+}
+
+func (v *Video) MarkOCRReady(jobID uuid.UUID, jobType, jobStatus string, expected, completed int, results []OCRFrameResultPayload) error {
+	if v.Status != StatusOCRProcessing && v.Status != StatusFramesReady {
+		if v.Status == StatusOCRReady {
+			return nil
+		}
+		return ErrInvalidTransition
+	}
+
+	now := time.Now().UTC()
+	v.Status = StatusOCRReady
+	v.UpdatedAt = now
+	v.recordEvent(VideoFramesOCRCompleted{
+		ID:                 uuid.New().String(),
+		VideoID:            v.ID.String(),
+		UserID:             v.ownerUserID(),
+		JobID:              jobID.String(),
+		JobType:            jobType,
+		Status:             v.Status,
+		JobStatus:          jobStatus,
+		ExpectedFrameCount: expected,
+		OCRCompletedCount:  completed,
+		Results:            results,
+		Timestamp:          now,
+	})
+	return nil
+}
+
+func (v *Video) MarkOCRFailed(jobID uuid.UUID, jobType, jobStatus, reason string, expected, completed int) error {
+	switch v.Status {
+	case StatusOCRProcessing, StatusFramesReady:
+	case StatusOCRFailed:
+		return nil
+	default:
+		return ErrInvalidTransition
+	}
+
+	now := time.Now().UTC()
+	v.Status = StatusOCRFailed
+	v.UpdatedAt = now
+	v.recordEvent(VideoOCRFailed{
+		ID:                 uuid.New().String(),
+		VideoID:            v.ID.String(),
+		UserID:             v.ownerUserID(),
+		JobID:              jobID.String(),
+		JobType:            jobType,
+		Status:             v.Status,
+		JobStatus:          jobStatus,
+		Reason:             reason,
+		ExpectedFrameCount: expected,
+		OCRCompletedCount:  completed,
+		Timestamp:          now,
+	})
+	return nil
 }
 
 func (v *Video) MarkUploadExpired() error {

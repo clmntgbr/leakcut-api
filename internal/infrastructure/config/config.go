@@ -53,6 +53,15 @@ type Config struct {
 	FrameExtractionTimeout  time.Duration
 	ExpireUploadsInterval   time.Duration
 	VideoMaxSizeBytes       int64
+	OCRQueue                string
+	OCRRoutingKey           string
+	OCRConcurrency          int
+	PaddleOCRURL            string
+	PaddleOCRTimeout        time.Duration
+	OCRBatchSize            int
+	OCRMinConfidence        float64
+	OCRLang                 string
+	OCRTimeout              time.Duration
 }
 
 func Load() *Config {
@@ -102,6 +111,15 @@ func Load() *Config {
 		FrameExtractionTimeout:  getEnvDuration("FRAME_EXTRACTION_TIMEOUT", 10*time.Minute),
 		ExpireUploadsInterval:   getEnvDuration("EXPIRE_UPLOADS_INTERVAL", time.Minute),
 		VideoMaxSizeBytes:       getEnvInt64OrDefault("VIDEO_MAX_SIZE_BYTES", 2*1024*1024*1024),
+		OCRQueue:                getEnvOrDefault("OCR_QUEUE", "ocr"),
+		OCRRoutingKey:           getEnvOrDefault("OCR_ROUTING_KEY", "video.frames_extracted.v1"),
+		OCRConcurrency:          getEnvIntOrDefault("OCR_CONCURRENCY", 2),
+		PaddleOCRURL:            getEnvOrDefault("PADDLEOCR_URL", "http://paddleocr:8080"),
+		PaddleOCRTimeout:        getEnvDuration("PADDLEOCR_TIMEOUT", 2*time.Minute),
+		OCRBatchSize:            getEnvIntOrDefault("OCR_BATCH_SIZE", 8),
+		OCRMinConfidence:        getEnvFloatOrDefault("OCR_MIN_CONFIDENCE", 0.5),
+		OCRLang:                 getEnvOrDefault("OCR_LANG", "fr+en"),
+		OCRTimeout:              getEnvDuration("OCR_TIMEOUT", 15*time.Minute),
 	}
 }
 
@@ -187,6 +205,19 @@ func getEnvInt64OrDefault(key string, defaultValue int64) int64 {
 	parsedValue, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
 		log.Panicf("invalid integer for %s: %q", key, value)
+		return 0
+	}
+	return parsedValue
+}
+
+func getEnvFloatOrDefault(key string, defaultValue float64) float64 {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	parsedValue, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		log.Panicf("invalid float for %s: %q", key, value)
 		return 0
 	}
 	return parsedValue

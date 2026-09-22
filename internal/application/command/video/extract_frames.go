@@ -62,7 +62,7 @@ func (h *ExtractFramesHandler) Handle(ctx context.Context, cmd ExtractFramesComm
 	if err != nil {
 		return err
 	}
-	if video.Status == domainvideo.StatusFramesReady {
+	if domainvideo.ExtractionAlreadyDone(video.Status) {
 		return nil
 	}
 
@@ -94,19 +94,19 @@ func (h *ExtractFramesHandler) load(ctx context.Context, videoID uuid.UUID) (*do
 		return nil, nil, messaging.NonRetryable(domainvideo.ErrVideoNotFound)
 	}
 
-	job, err := h.jobRepo.GetByVideoID(ctx, video.ID)
+	job, err := h.jobRepo.GetByVideoIDAndType(ctx, video.ID, domainjob.TypeExtractFrames)
 	if err != nil {
 		return nil, nil, messaging.Retryable(err)
 	}
 	if job == nil {
-		return nil, nil, messaging.NonRetryable(errors.New("scan job not found"))
+		return nil, nil, messaging.NonRetryable(errors.New("extract frames job not found"))
 	}
 	return video, job, nil
 }
 
 func (h *ExtractFramesHandler) markExtracting(ctx context.Context, video *domainvideo.Video, job *domainjob.Job) error {
 	job.MarkExtracting()
-	if err := video.MarkExtracting(job.ID, job.Status); err != nil {
+	if err := video.MarkExtracting(job.ID, job.Type, job.Status); err != nil {
 		return messaging.NonRetryable(err)
 	}
 
@@ -163,7 +163,6 @@ func (h *ExtractFramesHandler) extractAndStore(
 		return nil, messaging.NonRetryable(err)
 	}
 
-	payloads := make([]domainvideo.ExtractedFramePayload, 0, len(extracted))
 	rows := make([]*domainframe.Frame, 0, len(extracted))
 	for _, item := range extracted {
 		storageKey := domainvideo.NewFrameStorageKey(video.ID, item.Index)
@@ -178,17 +177,27 @@ func (h *ExtractFramesHandler) extractAndStore(
 			item.SelectionReason,
 			item.DiffScore,
 		))
-		payloads = append(payloads, domainvideo.ExtractedFramePayload{
-			Index:           item.Index,
-			TimestampMs:     item.TimestampMs,
-			StorageKey:      storageKey,
-			SelectionReason: item.SelectionReason,
-			DiffScore:       item.DiffScore,
-		})
 	}
 
 	if err := h.frameRepo.UpsertAll(ctx, rows); err != nil {
 		return nil, err
+	}
+
+	stored, err := h.frameRepo.ListByJobID(ctx, job.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	payloads := make([]domainvideo.ExtractedFramePayload, 0, len(stored))
+	for _, frame := range stored {
+		payloads = append(payloads, domainvideo.ExtractedFramePayload{
+			ID:              frame.ID.String(),
+			Index:           frame.Index,
+			TimestampMs:     frame.TimestampMs,
+			StorageKey:      frame.StorageKey,
+			SelectionReason: frame.SelectionReason,
+			DiffScore:       frame.DiffScore,
+		})
 	}
 	return payloads, nil
 }
@@ -214,8 +223,8 @@ func (h *ExtractFramesHandler) markReady(
 	job *domainjob.Job,
 	frames []domainvideo.ExtractedFramePayload,
 ) error {
-	job.MarkFramesReady()
-	if err := video.MarkFramesReady(job.ID, job.Status, frames); err != nil {
+	job.MarkFramesReady(len(frames))
+	if err := video.MarkFramesReady(job.ID, job.Type, job.Status, frames); err != nil {
 		return err
 	}
 
@@ -225,6 +234,15 @@ func (h *ExtractFramesHandler) markReady(
 		}
 		if err := h.jobRepo.Update(txCtx, job); err != nil {
 			return err
+		}
+		ocrJob, err := h.jobRepo.GetByVideoIDAndType(txCtx, video.ID, domainjob.TypeOCR)
+		if err != nil {
+			return err
+		}
+		if ocrJob == nil {
+			if err := h.jobRepo.Save(txCtx, domainjob.NewOCRJob(video.ID)); err != nil {
+				return err
+			}
 		}
 		return h.outbox.StoreEvents(txCtx, video.PullEvents())
 	})
@@ -237,7 +255,7 @@ func (h *ExtractFramesHandler) markFailed(
 	reason string,
 ) error {
 	job.MarkFailed(reason)
-	if err := video.MarkExtractionFailed(job.ID, job.Status, reason); err != nil {
+	if err := video.MarkExtractionFailed(job.ID, job.Type, job.Status, reason); err != nil {
 		return err
 	}
 

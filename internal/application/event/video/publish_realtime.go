@@ -29,13 +29,16 @@ type videoRealtimePayload struct {
 }
 
 type jobRealtimePayload struct {
-	ID            string    `json:"id"`
-	VideoID       string    `json:"videoId"`
-	Status        string    `json:"status"`
-	VideoStatus   string    `json:"videoStatus"`
-	FrameCount    int       `json:"frameCount"`
-	FailureReason string    `json:"failureReason,omitempty"`
-	OccurredAt    time.Time `json:"occurredAt"`
+	ID                 string    `json:"id"`
+	VideoID            string    `json:"videoId"`
+	Type               string    `json:"jobType"`
+	Status             string    `json:"status"`
+	VideoStatus        string    `json:"videoStatus"`
+	FrameCount         int       `json:"frameCount"`
+	ExpectedFrameCount int       `json:"expectedFrameCount"`
+	OCRCompletedCount  int       `json:"ocrCompletedCount"`
+	FailureReason      string    `json:"failureReason,omitempty"`
+	OccurredAt         time.Time `json:"occurredAt"`
 }
 
 func (h *PublishRealtimeHandler) OnCreated(ctx context.Context, payload []byte) error {
@@ -71,6 +74,7 @@ func (h *PublishRealtimeHandler) OnExtracting(ctx context.Context, payload []byt
 	return h.publishToOwner(ctx, realtime.EntityJob, realtime.ActionUpdated, evt.UserID, jobRealtimePayload{
 		ID:          evt.JobID,
 		VideoID:     evt.VideoID,
+		Type:        evt.JobType,
 		Status:      evt.JobStatus,
 		VideoStatus: evt.Status,
 		OccurredAt:  evt.Timestamp,
@@ -85,6 +89,7 @@ func (h *PublishRealtimeHandler) OnFramesExtracted(ctx context.Context, payload 
 	return h.publishToOwner(ctx, realtime.EntityJob, realtime.ActionUpdated, evt.UserID, jobRealtimePayload{
 		ID:          evt.JobID,
 		VideoID:     evt.VideoID,
+		Type:        evt.JobType,
 		Status:      evt.JobStatus,
 		VideoStatus: evt.Status,
 		FrameCount:  evt.FrameCount,
@@ -100,10 +105,64 @@ func (h *PublishRealtimeHandler) OnExtractionFailed(ctx context.Context, payload
 	return h.publishToOwner(ctx, realtime.EntityJob, realtime.ActionUpdated, evt.UserID, jobRealtimePayload{
 		ID:            evt.JobID,
 		VideoID:       evt.VideoID,
+		Type:          evt.JobType,
 		Status:        evt.JobStatus,
 		VideoStatus:   evt.Status,
 		FailureReason: evt.Reason,
 		OccurredAt:    evt.Timestamp,
+	})
+}
+
+func (h *PublishRealtimeHandler) OnOCRProcessing(ctx context.Context, payload []byte) error {
+	evt, err := decodeVideoEvent[domainvideo.VideoOCRProcessing](payload)
+	if err != nil {
+		return err
+	}
+	return h.publishToOwner(ctx, realtime.EntityJob, realtime.ActionUpdated, evt.UserID, jobRealtimePayload{
+		ID:                 evt.JobID,
+		VideoID:            evt.VideoID,
+		Type:               evt.JobType,
+		Status:             evt.JobStatus,
+		VideoStatus:        evt.Status,
+		ExpectedFrameCount: evt.ExpectedFrameCount,
+		OCRCompletedCount:  evt.OCRCompletedCount,
+		OccurredAt:         evt.Timestamp,
+	})
+}
+
+func (h *PublishRealtimeHandler) OnOCRCompleted(ctx context.Context, payload []byte) error {
+	evt, err := decodeVideoEvent[domainvideo.VideoFramesOCRCompleted](payload)
+	if err != nil {
+		return err
+	}
+	return h.publishToOwner(ctx, realtime.EntityJob, realtime.ActionUpdated, evt.UserID, jobRealtimePayload{
+		ID:                 evt.JobID,
+		VideoID:            evt.VideoID,
+		Type:               evt.JobType,
+		Status:             evt.JobStatus,
+		VideoStatus:        evt.Status,
+		FrameCount:         evt.ExpectedFrameCount,
+		ExpectedFrameCount: evt.ExpectedFrameCount,
+		OCRCompletedCount:  evt.OCRCompletedCount,
+		OccurredAt:         evt.Timestamp,
+	})
+}
+
+func (h *PublishRealtimeHandler) OnOCRFailed(ctx context.Context, payload []byte) error {
+	evt, err := decodeVideoEvent[domainvideo.VideoOCRFailed](payload)
+	if err != nil {
+		return err
+	}
+	return h.publishToOwner(ctx, realtime.EntityJob, realtime.ActionUpdated, evt.UserID, jobRealtimePayload{
+		ID:                 evt.JobID,
+		VideoID:            evt.VideoID,
+		Type:               evt.JobType,
+		Status:             evt.JobStatus,
+		VideoStatus:        evt.Status,
+		ExpectedFrameCount: evt.ExpectedFrameCount,
+		OCRCompletedCount:  evt.OCRCompletedCount,
+		FailureReason:      evt.Reason,
+		OccurredAt:         evt.Timestamp,
 	})
 }
 

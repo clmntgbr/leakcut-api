@@ -30,8 +30,8 @@ func (r *jobWriteRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain
 	return r.get(ctx, "id = ?", id)
 }
 
-func (r *jobWriteRepository) GetByVideoID(ctx context.Context, videoID uuid.UUID) (*domainjob.Job, error) {
-	return r.get(ctx, "video_id = ?", videoID)
+func (r *jobWriteRepository) GetByVideoIDAndType(ctx context.Context, videoID uuid.UUID, jobType string) (*domainjob.Job, error) {
+	return r.get(ctx, "video_id = ? AND type = ?", videoID, jobType)
 }
 
 func (r *jobWriteRepository) get(ctx context.Context, query string, args ...any) (*domainjob.Job, error) {

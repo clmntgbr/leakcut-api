@@ -86,14 +86,14 @@ func (c *Consumer) handleDelivery(ctx context.Context, m amqp.Delivery) {
 		return
 	}
 
-	err := c.registry.Dispatch(ctx, envelope.Type, envelope.Payload)
+	attempts := retryCount(m)
+	err := c.registry.Dispatch(messaging.WithAttempt(ctx, attempts, c.maxRetries), envelope.Type, envelope.Payload)
 	if err == nil {
 		_ = m.Ack(false)
 		return
 	}
 
 	var nonRetryable *messaging.NonRetryableError
-	attempts := retryCount(m)
 	if errors.As(err, &nonRetryable) || attempts >= c.maxRetries {
 		log.Printf(
 			"moving event to DLQ type=%s eventId=%s attempts=%d err=%v",

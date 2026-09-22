@@ -213,6 +213,58 @@ func TestVideoHandler_GetByID_Success(t *testing.T) {
 	if out.JobStatus == nil || *out.JobStatus != "pending" {
 		t.Fatalf("job status: got %v", out.JobStatus)
 	}
+	if len(out.Jobs) != 1 {
+		t.Fatalf("jobs: got %d want 1", len(out.Jobs))
+	}
+	if out.Jobs[0].Type != "extract_frames" || out.Jobs[0].Status != "pending" {
+		t.Fatalf("jobs[0]: %+v", out.Jobs[0])
+	}
+}
+
+func TestVideoHandler_GetByID_Success_WithOCRJob(t *testing.T) {
+	view := sampleVideoView()
+	view.Status = domainvideo.StatusOCRProcessing
+	view.JobID = &testutil.TestOCRJobID
+	view.JobStatus = "ocr_processing"
+	view.ExpectedFrameCount = 12
+	view.OCRCompletedCount = 3
+	view.Jobs = []domainvideo.JobView{
+		{ID: testutil.TestJobID, Type: "extract_frames", Status: "frames_ready", FrameCount: 12},
+		{ID: testutil.TestOCRJobID, Type: "ocr", Status: "ocr_processing", ExpectedFrameCount: 12, OCRCompletedCount: 3},
+	}
+	get := &mockGetVideoByIDHandler{view: view}
+	h := newVideoHandler(nil, get)
+
+	app := testutil.NewTestApp()
+	app.Get("/videos/:id", testutil.WithUserWithoutProject(testutil.TestUserID), h.GetByID)
+
+	req, err := testutil.JSONRequest(http.MethodGet, "/videos/"+testutil.TestVideoID.String(), nil)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("perform request: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var out presenter.VideoDetailResponse
+	testutil.DecodeJSON(t, resp, &out)
+	if out.JobID == nil || *out.JobID != testutil.TestOCRJobID.String() {
+		t.Fatalf("job id: got %v want OCR job", out.JobID)
+	}
+	if out.JobStatus == nil || *out.JobStatus != "ocr_processing" {
+		t.Fatalf("job status: got %v", out.JobStatus)
+	}
+	if len(out.Jobs) != 2 {
+		t.Fatalf("jobs: got %d want 2", len(out.Jobs))
+	}
+	if out.Jobs[1].ID != testutil.TestOCRJobID.String() || out.Jobs[1].Type != "ocr" {
+		t.Fatalf("jobs[1]: %+v", out.Jobs[1])
+	}
 }
 
 func TestVideoHandler_GetByID_Success_NoThumbnail(t *testing.T) {

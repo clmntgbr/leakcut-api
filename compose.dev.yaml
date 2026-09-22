@@ -90,6 +90,52 @@ services:
       - api
     restart: unless-stopped
 
+  paddleocr:
+    build:
+      context: ./ocr-service
+      dockerfile: Dockerfile
+    container_name: paddleocr
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 180s
+    environment:
+      OCR_LANG: ${OCR_LANG:-fr+en}
+      PADDLEOCR_VERSION: ${PADDLEOCR_VERSION:-PP-OCRv5}
+    networks:
+      - api
+    restart: unless-stopped
+
+  ocr:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: ocr
+    command: ["go", "run", "./cmd/ocr"]
+    volumes:
+      - .:/app
+      - go-modules:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    env_file:
+      - .env
+    environment:
+      PADDLEOCR_URL: http://paddleocr:8080
+    depends_on:
+      database:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      paddleocr:
+        condition: service_healthy
+    networks:
+      - api
+    restart: unless-stopped
+
   database:
     container_name: datastore
     image: postgres:${POSTGRES_VERSION:-16}-alpine

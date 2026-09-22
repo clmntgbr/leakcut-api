@@ -18,7 +18,7 @@ dev-down:
 	$(COMPOSE_DEV) down
 
 dev-logs:
-	$(COMPOSE_DEV) logs -f api worker frame
+	$(COMPOSE_DEV) logs -f api worker frame ocr paddleocr
 
 api-logs:
 	$(COMPOSE_DEV) logs -f api
@@ -35,8 +35,11 @@ scheduler-logs:
 frame-logs:
 	$(COMPOSE_DEV) logs -f frame
 
+ocr-logs:
+	$(COMPOSE_DEV) logs -f ocr paddleocr
+
 restart:
-	$(COMPOSE_DEV) restart api worker frame
+	$(COMPOSE_DEV) restart api worker frame ocr
 
 lint:
 	$(COMPOSE_DEV) exec api golangci-lint run --fix
