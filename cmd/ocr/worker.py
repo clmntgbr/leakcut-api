@@ -13,6 +13,7 @@ from engine import decode_image, env_int, load_pool, run_ocr
 
 logger = logging.getLogger("ocr")
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("RapidOCR").setLevel(logging.ERROR)
 
 READY_FLAG = "/tmp/ocr-ready"
 
@@ -178,6 +179,22 @@ def on_message(
             video_id,
             frame_id,
         )
+        if event_type == "video.frames_extracted.v1" or payload.get("frames"):
+            logger.info(
+                "ocr worker skip batch event type=%s videoId=%s — waiting for per-frame messages",
+                event_type,
+                video_id,
+            )
+            channel.basic_ack(delivery_tag=method.delivery_tag)
+            return
+        if not (payload.get("storageKey") and frame_id):
+            logger.warning(
+                "ocr worker skip event without frameId/storageKey type=%s videoId=%s",
+                event_type,
+                video_id,
+            )
+            channel.basic_ack(delivery_tag=method.delivery_tag)
+            return
         process_frame(channel, exchange, s3, payload)
         channel.basic_ack(delivery_tag=method.delivery_tag)
     except Exception:

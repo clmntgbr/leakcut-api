@@ -1,19 +1,85 @@
-# leakcut — Classify (Jev)
+# classify
 
-Après l'OCR, l'outbox publie `video.frames_ocr_completed.v1`. Le worker `classify` consomme cette clé sur la queue RabbitMQ `classify` (comme `frame` sur `video.uploaded.v1`) et appelle [Jev](https://vercel.com/ai-gateway/models/jev) en HTTP direct via Vercel AI Gateway.
+## Overview
 
-Pas de sidecar HTTP interne : Jev est déjà request/response. RabbitMQ sert à découpler le job (retry, DLQ, scale) du worker principal.
+Decide whether each frame’s OCR text looks confidential. The `classify` worker consumes `video.frames_ocr_completed.v1` and calls Jev (Vercel AI Gateway). Results land in `frame_findings`.
 
-Chaque frame reçoit un oui/non `confidential` plus des probabilités par catégorie : email, IBAN, API key, password, carte, téléphone, clé privée, identifiant, connection string, JWT, seed wallet, webhook/HMAC secret, adresse postale, nom+prénom.
+```
+video.frames_ocr_completed.v1 → queue classify
+     → load OCR rows → skip empty text
+     → POST ai-gateway /v1/evaluate (typesafe-ai/jev)
+     → upsert frame_findings
+     → video.frames_classified.v1
+```
 
-| Pièce | Emplacement |
-|---|---|
-| Worker Go | `cmd/classify` — queue `classify`, routing key `video.frames_ocr_completed.v1` |
-| Client Jev | `internal/infrastructure/classify/client.go` |
-| Commande | `internal/application/command/video/classify_frames.go` |
-| Job | `classify` (`UNIQUE (video_id, type)`), créé à la fin de l'OCR |
-| Persistance | `frame_findings` (migration `00012`) |
-| Événement | `video.frames_classified.v1` (sans le texte OCR) |
-| Realtime | `job.updated` via le worker principal |
+Jev runs **only** when trimmed OCR text is non-empty. Empty / whitespace → finding `skipped`, `confidential=false`. That is not a hit.
 
-`AI_GATEWAY_API_KEY` est obligatoire. Seuil `CLASSIFY_THRESHOLD=0.7`. Une frame sans texte OCR est `skipped`.
+## Queue
+
+| Setting | Value |
+|---------|-------|
+| Queue | `CLASSIFY_QUEUE` (`classify`) |
+| Routing | `CLASSIFY_ROUTING_KEY` (`video.frames_ocr_completed.v1`) |
+| Binary | `cmd/classify` |
+| Threshold | `CLASSIFY_THRESHOLD` (`0.7`) |
+
+`classify` has no `container_name` — `--scale classify=2` is allowed. One message per **video** (after all OCR rows exist), so extra replicas help across videos, not inside one video.
+
+## Decision
+
+Jev answers a fixed list of boolean questions. `probability` stored on the finding is `max(question probabilities)`. `confidential` is `probability ≥ CLASSIFY_THRESHOLD`.
+
+Questions are atomic booleans (no “or”). Category name stored on the finding:
+
+| Category | Jev question |
+|----------|----------------|
+| `email` | email address |
+| `iban` | IBAN / bank account |
+| `api_key` | API key, access token, client secret |
+| `password` | password / passphrase |
+| `credit_card` | payment card number |
+| `phone` | personal phone number |
+| `private_key` | private key / certificate |
+| `personal_id` | national ID / SSN |
+| `connection_string` | DSN / connection string |
+| `jwt` | JWT / session token / cookie |
+| `wallet_secret` | wallet seed / recovery phrase |
+| `webhook_secret` | webhook / HMAC secret |
+| `postal_address` | postal / street address |
+| `person_name` | first and last name (not a brand) |
+
+A score of `0.01`–`0.02` is a non-hit. Do not treat residual probability as a leak.
+
+## Finding status
+
+| Status | Meaning |
+|--------|---------|
+| `success` | Jev ran; `confidential` + `categories` set |
+| `skipped` | No OCR text; Jev not called |
+| `failed` | HTTP / unexpected JSON; `errorReason` set |
+
+`IsFinal` = `success` or `skipped`. Failed rows are retried on redelivery.
+
+## Schema
+
+`frame_findings`: `UNIQUE (frame_id)`. `categories` is jsonb (`[]` when none). Persistence uses a string `Valuer` so GORM does not send `[]byte` as `bytea`.
+
+## Env
+
+| Variable | Role |
+|----------|------|
+| `AI_GATEWAY_URL` | Default `https://ai-gateway.vercel.sh` |
+| `AI_GATEWAY_API_KEY` or `JEV_API_KEY` | Bearer token |
+| `CLASSIFY_THRESHOLD` | Confidential cutoff (default `0.7`) |
+
+## Code map
+
+| Piece | Location |
+|-------|----------|
+| Worker | `cmd/classify` |
+| Command | `internal/application/command/video/classify_frames.go` |
+| Jev client | `internal/infrastructure/classify/client.go` |
+| Domain | `internal/domain/finding/` |
+| Event start | `internal/application/event/video/on_ocr_completed_classify.go` |
+
+`GET /api/videos/:id` embeds each frame’s finding — see [upload & frame extraction](frame.md).

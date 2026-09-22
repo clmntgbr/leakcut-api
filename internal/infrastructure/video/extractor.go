@@ -3,14 +3,14 @@ package video
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"image/png"
+	"io"
 	"math"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -18,6 +18,8 @@ import (
 	domainjob "go-api/internal/domain/job"
 	"go-api/internal/domain/port"
 )
+
+var pngSignature = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 
 type FrameExtractor struct{}
 
@@ -73,7 +75,15 @@ func (e *FrameExtractor) ExtractThumbnail(ctx context.Context, videoPath string)
 	return nil, lastErr
 }
 
-func (e *FrameExtractor) ExtractFrames(ctx context.Context, videoPath string, params port.FrameSelectionParams) ([]port.ExtractedFrame, error) {
+func (e *FrameExtractor) ExtractFrames(
+	ctx context.Context,
+	videoPath string,
+	params port.FrameSelectionParams,
+	emit port.FrameSink,
+) error {
+	if emit == nil {
+		return errors.New("frame sink is required")
+	}
 	if params.AnalysisFPS <= 0 {
 		params.AnalysisFPS = domainjob.DefaultAnalysisFPS
 	}
@@ -87,13 +97,6 @@ func (e *FrameExtractor) ExtractFrames(ctx context.Context, videoPath string, pa
 		params.MaxWidthPx = domainjob.DefaultFrameMaxWidthPx
 	}
 
-	tmpDir, err := os.MkdirTemp("", "frame-extract-*")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	pattern := filepath.Join(tmpDir, "candidate-%06d.png")
 	cmd := exec.CommandContext(
 		ctx,
 		"ffmpeg",
@@ -104,34 +107,44 @@ func (e *FrameExtractor) ExtractFrames(ctx context.Context, videoPath string, pa
 			strconv.FormatFloat(params.AnalysisFPS, 'f', -1, 64),
 			params.MaxWidthPx,
 		),
-		pattern,
+		"-f", "image2pipe",
+		"-vcodec", "png",
+		"pipe:1",
 	)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("ffmpeg failed: %w (%s)", err, strings.TrimSpace(stderr.String()))
-	}
-
-	candidates, err := filepath.Glob(filepath.Join(tmpDir, "candidate-*.png"))
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("ffmpeg stdout: %w", err)
 	}
-	sort.Strings(candidates)
-	if len(candidates) == 0 {
-		return nil, fmt.Errorf("ffmpeg produced no frames")
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("ffmpeg start: %w", err)
 	}
 
 	maxIntervalMs := int64(params.MaxIntervalSeconds) * 1000
-	selected := make([]port.ExtractedFrame, 0)
+	kept := 0
+	candidate := 0
 	var lastGray []uint8
 	var lastWidth, lastHeight int
 	var lastKeptAt int64 = -1
+	readErr := error(nil)
 
-	for i, path := range candidates {
-		timestampMs := int64(math.Round(float64(i) * 1000 / params.AnalysisFPS))
-		gray, width, height, data, err := loadGrayPNG(path)
+	for {
+		data, err := readPNG(stdout)
 		if err != nil {
-			return nil, err
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				break
+			}
+			readErr = err
+			break
+		}
+
+		timestampMs := int64(math.Round(float64(candidate) * 1000 / params.AnalysisFPS))
+		candidate++
+		gray, width, height, err := loadGrayPNG(data)
+		if err != nil {
+			readErr = err
+			break
 		}
 
 		reason := ""
@@ -146,38 +159,74 @@ func (e *FrameExtractor) ExtractFrames(ctx context.Context, videoPath string, pa
 				reason = domainframe.SelectionReasonFixedInterval
 			}
 		}
-
 		if reason == "" {
 			continue
 		}
 
-		selected = append(selected, port.ExtractedFrame{
-			Index:           len(selected),
+		if err := emit(port.ExtractedFrame{
+			Index:           kept,
 			TimestampMs:     timestampMs,
 			Data:            data,
 			SelectionReason: reason,
 			DiffScore:       score,
-		})
+		}); err != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			return err
+		}
+		kept++
 		lastGray = gray
 		lastWidth, lastHeight = width, height
 		lastKeptAt = timestampMs
 	}
 
-	if len(selected) == 0 {
-		return nil, fmt.Errorf("no frames retained")
+	waitErr := cmd.Wait()
+	if readErr != nil {
+		return readErr
 	}
-	return selected, nil
+	if waitErr != nil && kept == 0 {
+		return fmt.Errorf("ffmpeg failed: %w (%s)", waitErr, strings.TrimSpace(stderr.String()))
+	}
+	if kept == 0 {
+		return fmt.Errorf("no frames retained")
+	}
+	return nil
 }
 
-func loadGrayPNG(path string) ([]uint8, int, int, []byte, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, 0, 0, nil, err
+func readPNG(r io.Reader) ([]byte, error) {
+	var buf bytes.Buffer
+	sig := make([]byte, 8)
+	if _, err := io.ReadFull(r, sig); err != nil {
+		return nil, err
 	}
+	if !bytes.Equal(sig, pngSignature) {
+		return nil, fmt.Errorf("invalid png signature")
+	}
+	buf.Write(sig)
 
+	header := make([]byte, 8)
+	for {
+		if _, err := io.ReadFull(r, header); err != nil {
+			return nil, err
+		}
+		buf.Write(header)
+		length := binary.BigEndian.Uint32(header[:4])
+		typ := string(header[4:8])
+		chunk := make([]byte, int(length)+4)
+		if _, err := io.ReadFull(r, chunk); err != nil {
+			return nil, err
+		}
+		buf.Write(chunk)
+		if typ == "IEND" {
+			return buf.Bytes(), nil
+		}
+	}
+}
+
+func loadGrayPNG(raw []byte) ([]uint8, int, int, error) {
 	img, err := png.Decode(bytes.NewReader(raw))
 	if err != nil {
-		return nil, 0, 0, nil, fmt.Errorf("decode frame: %w", err)
+		return nil, 0, 0, fmt.Errorf("decode frame: %w", err)
 	}
 
 	bounds := img.Bounds()
@@ -189,8 +238,7 @@ func loadGrayPNG(path string) ([]uint8, int, int, []byte, error) {
 			gray[(y-bounds.Min.Y)*width+(x-bounds.Min.X)] = uint8(((r*299 + g*587 + b*114) / 1000) >> 8)
 		}
 	}
-
-	return gray, width, height, raw, nil
+	return gray, width, height, nil
 }
 
 func meanAbsDiff(a []uint8, b []uint8, aw, ah, bw, bh int) float64 {

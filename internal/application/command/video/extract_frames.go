@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -17,6 +18,8 @@ import (
 
 	"github.com/google/uuid"
 )
+
+var errPersistFrame = errors.New("persist extracted frame")
 
 type ExtractFramesCommand struct {
 	VideoID uuid.UUID
@@ -160,21 +163,16 @@ func (h *ExtractFramesHandler) extractAndStore(
 		log.Printf("failed to store thumbnail for video %s: %v", video.ID, err)
 	}
 
-	extracted, err := h.extractor.ExtractFrames(ctx, tmp.Name(), port.FrameSelectionParams{
+	payloads := make([]domainvideo.ExtractedFramePayload, 0)
+	err = h.extractor.ExtractFrames(ctx, tmp.Name(), port.FrameSelectionParams{
 		AnalysisFPS:        job.AnalysisFPS,
 		DiffThreshold:      job.DiffThreshold,
 		MaxIntervalSeconds: job.MaxIntervalSeconds,
 		MaxWidthPx:         h.maxWidthPx,
-	})
-	if err != nil {
-		return nil, messaging.NonRetryable(err)
-	}
-
-	payloads := make([]domainvideo.ExtractedFramePayload, 0, len(extracted))
-	for _, item := range extracted {
+	}, func(item port.ExtractedFrame) error {
 		storageKey := domainvideo.NewFrameStorageKey(video.ID, item.Index)
 		if err := h.storage.Put(ctx, storageKey, bytes.NewReader(item.Data), int64(len(item.Data)), "image/png"); err != nil {
-			return nil, err
+			return fmt.Errorf("%w: %w", errPersistFrame, err)
 		}
 		frame := domainframe.NewFrame(
 			job.ID,
@@ -186,9 +184,16 @@ func (h *ExtractFramesHandler) extractAndStore(
 		)
 		payload, err := h.persistFrameAndRequestOCR(ctx, video, frame)
 		if err != nil {
-			return nil, err
+			return fmt.Errorf("%w: %w", errPersistFrame, err)
 		}
 		payloads = append(payloads, payload)
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, errPersistFrame) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return payloads, err
+		}
+		return payloads, messaging.NonRetryable(err)
 	}
 	return payloads, nil
 }

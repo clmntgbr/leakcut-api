@@ -94,6 +94,9 @@ services:
       context: ./cmd/ocr
       dockerfile: Dockerfile
     shm_size: "1gb"
+    volumes:
+      - ./cmd/ocr/worker.py:/app/worker.py
+      - ./cmd/ocr/engine.py:/app/engine.py
     env_file:
       - .env
     healthcheck:
