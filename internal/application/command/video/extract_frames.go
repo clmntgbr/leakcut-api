@@ -170,43 +170,62 @@ func (h *ExtractFramesHandler) extractAndStore(
 		return nil, messaging.NonRetryable(err)
 	}
 
-	rows := make([]*domainframe.Frame, 0, len(extracted))
+	payloads := make([]domainvideo.ExtractedFramePayload, 0, len(extracted))
 	for _, item := range extracted {
 		storageKey := domainvideo.NewFrameStorageKey(video.ID, item.Index)
 		if err := h.storage.Put(ctx, storageKey, bytes.NewReader(item.Data), int64(len(item.Data)), "image/png"); err != nil {
 			return nil, err
 		}
-		rows = append(rows, domainframe.NewFrame(
+		frame := domainframe.NewFrame(
 			job.ID,
 			item.Index,
 			item.TimestampMs,
 			storageKey,
 			item.SelectionReason,
 			item.DiffScore,
-		))
+		)
+		payload, err := h.persistFrameAndRequestOCR(ctx, video, frame)
+		if err != nil {
+			return nil, err
+		}
+		payloads = append(payloads, payload)
 	}
+	return payloads, nil
+}
 
-	if err := h.frameRepo.UpsertAll(ctx, rows); err != nil {
-		return nil, err
-	}
-
-	stored, err := h.frameRepo.ListByJobID(ctx, job.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	payloads := make([]domainvideo.ExtractedFramePayload, 0, len(stored))
-	for _, frame := range stored {
-		payloads = append(payloads, domainvideo.ExtractedFramePayload{
+func (h *ExtractFramesHandler) persistFrameAndRequestOCR(
+	ctx context.Context,
+	video *domainvideo.Video,
+	frame *domainframe.Frame,
+) (domainvideo.ExtractedFramePayload, error) {
+	var payload domainvideo.ExtractedFramePayload
+	err := h.videoRepo.WithTransaction(ctx, func(txCtx context.Context) error {
+		if err := h.frameRepo.UpsertAll(txCtx, []*domainframe.Frame{frame}); err != nil {
+			return err
+		}
+		stored, err := h.frameRepo.ListByJobID(txCtx, frame.JobID)
+		if err != nil {
+			return err
+		}
+		payload = domainvideo.ExtractedFramePayload{
 			ID:              frame.ID.String(),
 			Index:           frame.Index,
 			TimestampMs:     frame.TimestampMs,
 			StorageKey:      frame.StorageKey,
 			SelectionReason: frame.SelectionReason,
 			DiffScore:       frame.DiffScore,
-		})
-	}
-	return payloads, nil
+		}
+		for _, row := range stored {
+			if row.Index == frame.Index {
+				payload.ID = row.ID.String()
+				payload.StorageKey = row.StorageKey
+				break
+			}
+		}
+		video.RequestFrameOCR(payload)
+		return h.outbox.StoreEvents(txCtx, video.PullEvents())
+	})
+	return payload, err
 }
 
 func (h *ExtractFramesHandler) storeThumbnail(ctx context.Context, video *domainvideo.Video, videoPath string) error {

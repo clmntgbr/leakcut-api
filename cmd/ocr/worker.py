@@ -3,7 +3,6 @@ import logging
 import os
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any
 
@@ -25,7 +24,7 @@ def env(name: str, default: str = "") -> str:
 def declare_topology(channel: pika.channel.Channel) -> tuple[str, str]:
     exchange = env("RABBITMQ_EXCHANGE", "domain.events")
     queue = env("OCR_QUEUE", "ocr")
-    routing_key = env("OCR_ROUTING_KEY", "video.frames_extracted.v1")
+    routing_key = env("OCR_ROUTING_KEY", "video.ocr_frame_requested.v1")
     retry_ttl = int(env("RABBITMQ_RETRY_TTL_MS", "30000"))
     retry_queue = f"{queue}.retry"
     dlq = f"{queue}.dlq"
@@ -41,6 +40,10 @@ def declare_topology(channel: pika.channel.Channel) -> tuple[str, str]:
             "x-dead-letter-routing-key": "retry",
         },
     )
+    try:
+        channel.queue_unbind(queue=queue, exchange=exchange, routing_key="video.frames_extracted.v1")
+    except Exception:
+        pass
     channel.queue_bind(queue=queue, exchange=exchange, routing_key=routing_key)
     channel.queue_bind(queue=queue, exchange=dlx, routing_key="main")
     channel.queue_declare(
@@ -128,27 +131,29 @@ def publish_batch(channel: pika.channel.Channel, exchange: str, video_id: str, r
     )
 
 
-def process_video(channel: pika.channel.Channel, exchange: str, s3, payload: dict[str, Any]) -> None:
+def process_frame(channel: pika.channel.Channel, exchange: str, s3, payload: dict[str, Any]) -> None:
     video_id = payload.get("videoId") or ""
-    frames = payload.get("frames") or []
+    frame = {
+        "id": payload.get("frameId") or payload.get("id") or "",
+        "index": payload.get("index", 0),
+        "timestampMs": payload.get("timestampMs", 0),
+        "storageKey": payload.get("storageKey") or "",
+    }
     bucket = env("STORAGE_BUCKET", "media")
-    batch_size = env_int("OCR_BATCH_SIZE", 8)
-    infer_concurrency = env_int("OCR_INFER_CONCURRENCY", 2)
-
-    logger.info("ocr worker processing video=%s frames=%d", video_id, len(frames))
-    batch: list[dict[str, Any]] = []
-    with ThreadPoolExecutor(max_workers=infer_concurrency, thread_name_prefix="ocr") as pool:
-        futures = [pool.submit(ocr_frame, s3, bucket, frame) for frame in frames]
-        for future in as_completed(futures):
-            batch.append(future.result())
-            if len(batch) >= batch_size:
-                publish_batch(channel, exchange, video_id, batch)
-                batch = []
-    if batch:
-        publish_batch(channel, exchange, video_id, batch)
-    if not frames:
-        publish_batch(channel, exchange, video_id, [])
-    logger.info("ocr worker finished video=%s frames=%d", video_id, len(frames))
+    logger.info(
+        "ocr worker processing video=%s frameId=%s index=%s",
+        video_id,
+        frame["id"],
+        frame["index"],
+    )
+    result = ocr_frame(s3, bucket, frame)
+    publish_batch(channel, exchange, video_id, [result])
+    logger.info(
+        "ocr worker finished video=%s frameId=%s status=%s",
+        video_id,
+        frame["id"],
+        result.get("status"),
+    )
 
 
 def on_message(
@@ -166,8 +171,14 @@ def on_message(
         if isinstance(payload, str):
             payload = json.loads(payload)
         video_id = payload.get("videoId") or envelope.get("aggregateId") or ""
-        logger.info("ocr worker received event type=%s videoId=%s", event_type, video_id)
-        process_video(channel, exchange, s3, payload)
+        frame_id = payload.get("frameId") or payload.get("id") or ""
+        logger.info(
+            "ocr worker received event type=%s videoId=%s frameId=%s",
+            event_type,
+            video_id,
+            frame_id,
+        )
+        process_frame(channel, exchange, s3, payload)
         channel.basic_ack(delivery_tag=method.delivery_tag)
     except Exception:
         logger.exception("ocr worker failed, sending to retry")

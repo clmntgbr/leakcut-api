@@ -242,6 +242,22 @@ func (v *Video) MarkExtractionFailed(jobID uuid.UUID, jobType, jobStatus, reason
 	return nil
 }
 
+func (v *Video) RequestFrameOCR(frame ExtractedFramePayload) {
+	if frame.ID == "" || frame.StorageKey == "" {
+		return
+	}
+	now := time.Now().UTC()
+	v.recordEvent(VideoOCRFrameRequested{
+		ID:          uuid.New().String(),
+		VideoID:     v.ID.String(),
+		FrameID:     frame.ID,
+		StorageKey:  frame.StorageKey,
+		FrameIndex:  frame.Index,
+		TimestampMs: frame.TimestampMs,
+		Timestamp:   now,
+	})
+}
+
 func (v *Video) SetThumbnailKey(key string) {
 	if key == "" || v.ThumbnailKey == key {
 		return

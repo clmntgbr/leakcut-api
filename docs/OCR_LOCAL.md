@@ -172,7 +172,7 @@ Publication **groupée** une fois tout le lot de frames traité (pas un événem
 | Paramètre | Défaut | Notes |
 |---|---|---|
 | `lang` | `fr+en` | PaddleOCR PP-OCRv6 couvre les deux dans un seul modèle, pas de switch de modèle nécessaire |
-| `OCR_QUEUE` | `ocr` | Queue dédiée, binding `video.frames_extracted.v1` |
+| `OCR_QUEUE` | `ocr` | Queue dédiée, binding `video.ocr_frame_requested.v1` (un message par frame) |
 | `OCR_BATCH_SIZE` | 8 | Taille d'un lot publié en `video.ocr_batch_completed.v1` |
 | `OCR_INFER_CONCURRENCY` | 2 | Engines RapidOCR (ONNX) ; frames d'une même vidéo inférées en parallèle. RAM × N |
 | `OCR_INTRA_OP_THREADS` | 2 | Threads onnxruntime / OpenMP par engine, bornés au CPU du container |
@@ -211,7 +211,7 @@ Chaque tâche a son propre `Job` (`internal/domain/job`) : `extract_frames` à l
 
 | Pièce | Emplacement |
 |---|---|
-| Worker OCR | `cmd/ocr/worker.py` — queue `ocr`, routing `video.frames_extracted.v1` |
+| Worker OCR | `cmd/ocr/worker.py` — queue `ocr`, routing `video.ocr_frame_requested.v1` |
 | Persist Go | `cmd/worker` — `start_ocr_on_frames_extracted` + `persist_ocr_batch` |
 | Commande | `internal/application/command/video/ocr_frames.go` (`Start` / `PersistBatch`) |
 | Inférence | RapidOCR + onnxruntime dans le worker Python |

@@ -8,6 +8,7 @@ const (
 	EventTypeVideoUploaded              = "video.uploaded.v1"
 	EventTypeVideoExtracting            = "video.extracting.v1"
 	EventTypeVideoFramesExtracted       = "video.frames_extracted.v1"
+	EventTypeVideoOCRFrameRequested     = "video.ocr_frame_requested.v1"
 	EventTypeVideoFrameExtractionFailed = "video.frame_extraction_failed.v1"
 	EventTypeVideoOCRProcessing         = "video.ocr_processing.v1"
 	EventTypeVideoOCRBatchCompleted     = "video.ocr_batch_completed.v1"
@@ -105,6 +106,21 @@ func (e VideoFramesExtracted) EventID() string       { return e.ID }
 func (e VideoFramesExtracted) EventType() string     { return EventTypeVideoFramesExtracted }
 func (e VideoFramesExtracted) AggregateID() string   { return e.VideoID }
 func (e VideoFramesExtracted) OccurredAt() time.Time { return e.Timestamp }
+
+type VideoOCRFrameRequested struct {
+	ID          string    `json:"eventId"`
+	VideoID     string    `json:"videoId"`
+	FrameID     string    `json:"frameId"`
+	StorageKey  string    `json:"storageKey"`
+	FrameIndex  int       `json:"index"`
+	TimestampMs int64     `json:"timestampMs"`
+	Timestamp   time.Time `json:"timestamp"`
+}
+
+func (e VideoOCRFrameRequested) EventID() string       { return e.ID }
+func (e VideoOCRFrameRequested) EventType() string     { return EventTypeVideoOCRFrameRequested }
+func (e VideoOCRFrameRequested) AggregateID() string   { return e.VideoID }
+func (e VideoOCRFrameRequested) OccurredAt() time.Time { return e.Timestamp }
 
 type VideoFrameExtractionFailed struct {
 	ID        string    `json:"eventId"`
