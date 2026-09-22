@@ -111,6 +111,7 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 		minioStorage,
 		ocr.NewClient(env.OCRURL, env.OCREngineTimeout),
 		env.OCRBatchSize,
+		env.OCRBatchConcurrency,
 		env.OCRMinConfidence,
 		env.OCRLang,
 		env.OCRTimeout,

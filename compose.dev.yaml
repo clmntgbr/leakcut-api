@@ -54,6 +54,7 @@ services:
       CENTRIFUGO_TOKEN_SECRET: ${CENTRIFUGO_TOKEN_SECRET:-dev-centrifugo-token-secret}
       CENTRIFUGO_PUBLIC_WS_URL: ${CENTRIFUGO_PUBLIC_WS_URL:-ws://localhost:8000/connection/websocket}
       OCR_URL: http://ocr:8080
+      OCR_BATCH_CONCURRENCY: ${OCR_BATCH_CONCURRENCY:-2}
     depends_on:
       database:
         condition: service_healthy
@@ -64,7 +65,7 @@ services:
       mailpit:
         condition: service_started
       ocr:
-        condition: service_started
+        condition: service_healthy
     networks:
       - api
     restart: unless-stopped
@@ -97,17 +98,17 @@ services:
     build:
       context: ./cmd/ocr
       dockerfile: Dockerfile
-    container_name: ocr
     shm_size: "1gb"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
       interval: 30s
       timeout: 5s
       retries: 10
-      start_period: 180s
+      start_period: 240s
     environment:
       OCR_LANG: ${OCR_LANG:-fr+en}
       PADDLEOCR_VERSION: ${PADDLEOCR_VERSION:-PP-OCRv5}
+      OCR_INFER_CONCURRENCY: ${OCR_INFER_CONCURRENCY:-2}
     volumes:
       - ocr_models:/root/.paddlex
     networks:

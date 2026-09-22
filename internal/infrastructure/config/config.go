@@ -56,6 +56,7 @@ type Config struct {
 	OCRURL                  string
 	OCREngineTimeout        time.Duration
 	OCRBatchSize            int
+	OCRBatchConcurrency     int
 	OCRMinConfidence        float64
 	OCRLang                 string
 	OCRTimeout              time.Duration
@@ -111,6 +112,7 @@ func Load() *Config {
 		OCRURL:                  getEnvOrDefault("OCR_URL", "http://ocr:8080"),
 		OCREngineTimeout:        getEnvDuration("OCR_ENGINE_TIMEOUT", 2*time.Minute),
 		OCRBatchSize:            getEnvIntOrDefault("OCR_BATCH_SIZE", 8),
+		OCRBatchConcurrency:     getEnvIntOrDefault("OCR_BATCH_CONCURRENCY", 2),
 		OCRMinConfidence:        getEnvFloatOrDefault("OCR_MIN_CONFIDENCE", 0.5),
 		OCRLang:                 getEnvOrDefault("OCR_LANG", "fr+en"),
 		OCRTimeout:              getEnvDuration("OCR_TIMEOUT", 15*time.Minute),

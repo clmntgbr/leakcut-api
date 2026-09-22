@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
 	"time"
 
 	"go-api/internal/application/messaging"
@@ -22,17 +23,18 @@ type OCRFramesCommand struct {
 }
 
 type OCRFramesHandler struct {
-	videoRepo     domainvideo.VideoWriteRepository
-	jobRepo       domainjob.JobWriteRepository
-	frameRepo     domainframe.FrameWriteRepository
-	ocrRepo       domainocr.ResultWriteRepository
-	outbox        port.OutboxRepository
-	storage       port.Storage
-	engine        port.OCREngine
-	batchSize     int
-	minConfidence float64
-	lang          string
-	timeout       time.Duration
+	videoRepo        domainvideo.VideoWriteRepository
+	jobRepo          domainjob.JobWriteRepository
+	frameRepo        domainframe.FrameWriteRepository
+	ocrRepo          domainocr.ResultWriteRepository
+	outbox           port.OutboxRepository
+	storage          port.Storage
+	engine           port.OCREngine
+	batchSize        int
+	batchConcurrency int
+	minConfidence    float64
+	lang             string
+	timeout          time.Duration
 }
 
 func NewOCRFramesHandler(
@@ -44,6 +46,7 @@ func NewOCRFramesHandler(
 	storage port.Storage,
 	engine port.OCREngine,
 	batchSize int,
+	batchConcurrency int,
 	minConfidence float64,
 	lang string,
 	timeout time.Duration,
@@ -51,21 +54,25 @@ func NewOCRFramesHandler(
 	if batchSize <= 0 {
 		batchSize = 8
 	}
+	if batchConcurrency <= 0 {
+		batchConcurrency = 2
+	}
 	if lang == "" {
 		lang = "fr+en"
 	}
 	return &OCRFramesHandler{
-		videoRepo:     videoRepo,
-		jobRepo:       jobRepo,
-		frameRepo:     frameRepo,
-		ocrRepo:       ocrRepo,
-		outbox:        outbox,
-		storage:       storage,
-		engine:        engine,
-		batchSize:     batchSize,
-		minConfidence: minConfidence,
-		lang:          lang,
-		timeout:       timeout,
+		videoRepo:        videoRepo,
+		jobRepo:          jobRepo,
+		frameRepo:        frameRepo,
+		ocrRepo:          ocrRepo,
+		outbox:           outbox,
+		storage:          storage,
+		engine:           engine,
+		batchSize:        batchSize,
+		batchConcurrency: batchConcurrency,
+		minConfidence:    minConfidence,
+		lang:             lang,
+		timeout:          timeout,
 	}
 }
 
@@ -100,14 +107,8 @@ func (h *OCRFramesHandler) Handle(ctx context.Context, cmd OCRFramesCommand) err
 	}
 
 	pending := pendingFrames(frames, existing)
-	for _, batch := range chunkFrames(pending, h.batchSize) {
-		results, recErr := h.recognizeBatch(ctx, batch)
-		if recErr != nil {
-			return h.failOrRetry(ctx, video, job, recErr, "ocr service unavailable")
-		}
-		if err := h.persistBatch(ctx, job, results, known); err != nil {
-			return h.failOrRetry(ctx, video, job, err, "failed to persist ocr results")
-		}
+	if err := h.processBatches(ctx, video, job, pending, known); err != nil {
+		return err
 	}
 
 	stored, err := h.ocrRepo.ListByFrameIDs(ctx, frameIDs(frames))
@@ -175,6 +176,78 @@ func (h *OCRFramesHandler) markProcessing(
 	})
 	if err != nil {
 		return messaging.Retryable(err)
+	}
+	return nil
+}
+
+func (h *OCRFramesHandler) processBatches(
+	ctx context.Context,
+	video *domainvideo.Video,
+	job *domainjob.Job,
+	pending []*domainframe.Frame,
+	known map[uuid.UUID]*domainocr.Result,
+) error {
+	batches := chunkFrames(pending, h.batchSize)
+	if len(batches) == 0 {
+		return nil
+	}
+
+	concurrency := h.batchConcurrency
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	if concurrency > len(batches) {
+		concurrency = len(batches)
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	var persistMu sync.Mutex
+	var once sync.Once
+	var firstErr error
+	var firstReason string
+
+	report := func(err error, reason string) {
+		once.Do(func() {
+			firstErr = err
+			firstReason = reason
+			cancel()
+		})
+	}
+
+	for _, batch := range batches {
+		if runCtx.Err() != nil {
+			break
+		}
+		wg.Add(1)
+		go func(batch []*domainframe.Frame) {
+			defer wg.Done()
+			select {
+			case <-runCtx.Done():
+				return
+			case sem <- struct{}{}:
+			}
+			defer func() { <-sem }()
+
+			results, recErr := h.recognizeBatch(runCtx, batch)
+			if recErr != nil {
+				report(recErr, "ocr service unavailable")
+				return
+			}
+
+			persistMu.Lock()
+			defer persistMu.Unlock()
+			if err := h.persistBatch(ctx, job, results, known); err != nil {
+				report(err, "failed to persist ocr results")
+			}
+		}(batch)
+	}
+	wg.Wait()
+	if firstErr != nil {
+		return h.failOrRetry(ctx, video, job, firstErr, firstReason)
 	}
 	return nil
 }

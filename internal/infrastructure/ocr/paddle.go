@@ -23,10 +23,14 @@ func NewClient(baseURL string, timeout time.Duration) *Client {
 	if timeout <= 0 {
 		timeout = 2 * time.Minute
 	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DisableKeepAlives = true
+
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		httpClient: &http.Client{
-			Timeout: timeout,
+			Timeout:   timeout,
+			Transport: transport,
 		},
 	}
 }

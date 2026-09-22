@@ -10,7 +10,8 @@ os.environ.setdefault("KMP_AFFINITY", "disabled")
 import base64
 import io
 import logging
-import threading
+import queue
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import numpy as np
@@ -22,8 +23,10 @@ logger = logging.getLogger("ocr")
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="ocr")
-ocr_engine = None
-ocr_lock = threading.Lock()
+engine_pool: queue.Queue = queue.Queue()
+infer_pool: ThreadPoolExecutor | None = None
+engines_ready = 0
+infer_concurrency = 1
 
 
 class OCRImage(BaseModel):
@@ -58,6 +61,17 @@ def normalize_lang(lang: str) -> str:
     return value.split("+")[0]
 
 
+def env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, "")
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(1, value)
+
+
 def load_engine():
     from paddleocr import PaddleOCR
 
@@ -84,48 +98,58 @@ def load_engine():
 
 @app.on_event("startup")
 def startup() -> None:
-    global ocr_engine
-    logger.info("loading ocr models")
-    ocr_engine = load_engine()
-    logger.info("ocr models ready")
+    global infer_pool, infer_concurrency, engines_ready
+    infer_concurrency = env_int("OCR_INFER_CONCURRENCY", 2)
+    logger.info("loading %d ocr engine(s)", infer_concurrency)
+    for index in range(infer_concurrency):
+        engine_pool.put(load_engine())
+        engines_ready += 1
+        logger.info("ocr engine %d/%d ready", index + 1, infer_concurrency)
+    infer_pool = ThreadPoolExecutor(max_workers=infer_concurrency, thread_name_prefix="ocr-infer")
+
+
+@app.on_event("shutdown")
+def shutdown() -> None:
+    if infer_pool is not None:
+        infer_pool.shutdown(wait=False, cancel_futures=True)
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    if ocr_engine is None:
+def health() -> dict[str, Any]:
+    if engines_ready == 0:
         raise HTTPException(status_code=503, detail="model not loaded")
-    return {"status": "ok"}
+    return {"status": "ok", "engines": engines_ready}
 
 
 @app.post("/ocr", response_model=OCRResponse)
 def recognize(payload: OCRRequest) -> OCRResponse:
-    if ocr_engine is None:
+    if engines_ready == 0:
         raise HTTPException(status_code=503, detail="model not loaded")
+    if infer_pool is None or len(payload.images) <= 1:
+        return OCRResponse(results=[process_image(image) for image in payload.images])
 
-    results: list[OCRItem] = []
-    for image in payload.images:
-        try:
-            array = decode_image(image.image_base64)
-            text, confidence, status = run_ocr(array)
-            results.append(
-                OCRItem(
-                    frame_id=image.frame_id,
-                    text=text,
-                    confidence=confidence,
-                    status=status,
-                )
-            )
-        except Exception as exc:  # isolated frame failure
-            logger.exception("ocr failed for frame %s: %s", image.frame_id, exc)
-            results.append(
-                OCRItem(
-                    frame_id=image.frame_id,
-                    text="",
-                    confidence=0.0,
-                    status="failed",
-                )
-            )
-    return OCRResponse(results=results)
+    futures = [infer_pool.submit(process_image, image) for image in payload.images]
+    return OCRResponse(results=[future.result() for future in futures])
+
+
+def process_image(image: OCRImage) -> OCRItem:
+    try:
+        array = decode_image(image.image_base64)
+        text, confidence, status = run_ocr(array)
+        return OCRItem(
+            frame_id=image.frame_id,
+            text=text,
+            confidence=confidence,
+            status=status,
+        )
+    except Exception as exc:  # isolated frame failure
+        logger.exception("ocr failed for frame %s: %s", image.frame_id, exc)
+        return OCRItem(
+            frame_id=image.frame_id,
+            text="",
+            confidence=0.0,
+            status="failed",
+        )
 
 
 def decode_image(raw_b64: str) -> np.ndarray:
@@ -135,12 +159,15 @@ def decode_image(raw_b64: str) -> np.ndarray:
 
 
 def run_ocr(image: np.ndarray) -> tuple[str, float, str]:
-    with ocr_lock:
-        if hasattr(ocr_engine, "predict"):
-            raw = ocr_engine.predict(image)
+    engine = engine_pool.get()
+    try:
+        if hasattr(engine, "predict"):
+            raw = engine.predict(image)
             return parse_predict(raw)
-        raw = ocr_engine.ocr(image)
+        raw = engine.ocr(image)
         return parse_legacy(raw)
+    finally:
+        engine_pool.put(engine)
 
 
 def parse_predict(raw: Any) -> tuple[str, float, str]:
