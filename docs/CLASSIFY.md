@@ -4,7 +4,7 @@ Après l'OCR, l'outbox publie `video.frames_ocr_completed.v1`. Le worker `classi
 
 Pas de sidecar HTTP interne : Jev est déjà request/response. RabbitMQ sert à découpler le job (retry, DLQ, scale) du worker principal.
 
-Chaque frame reçoit un oui/non `confidential` plus des probabilités par catégorie (email, IBAN, API key, password, carte, téléphone, clé privée, identifiant).
+Chaque frame reçoit un oui/non `confidential` plus des probabilités par catégorie : email, IBAN, API key, password, carte, téléphone, clé privée, identifiant, connection string, JWT, seed wallet, webhook/HMAC secret, adresse postale, nom+prénom.
 
 | Pièce | Emplacement |
 |---|---|

@@ -48,17 +48,47 @@ var jevQuestions = map[string]jevQuestion{
 		Type:         "boolean",
 		Instructions: "Does the text contain a national ID, social security number, or similar personal identifier?",
 	},
+	"has_connection_string": {
+		Type:         "boolean",
+		Instructions: "Does the text contain a database or service connection string (for example postgres://, mysql://, mongodb+srv, redis://, or a host with user and password)?",
+	},
+	"has_jwt": {
+		Type:         "boolean",
+		Instructions: "Does the text contain a JWT, session token, or session cookie value?",
+	},
+	"has_wallet_secret": {
+		Type:         "boolean",
+		Instructions: "Does the text contain a crypto wallet seed phrase, recovery phrase, or wallet private key?",
+	},
+	"has_webhook_secret": {
+		Type:         "boolean",
+		Instructions: "Does the text contain a webhook signing secret, HMAC secret, or similar callback credential?",
+	},
+	"has_postal_address": {
+		Type:         "boolean",
+		Instructions: "Does the text contain a postal or street address that identifies a person or household?",
+	},
+	"has_person_name": {
+		Type:         "boolean",
+		Instructions: "Does the text contain a person's first and last name as personal identifying information, not a brand or product name?",
+	},
 }
 
 var categoryNames = map[string]string{
-	"has_email":       "email",
-	"has_iban":        "iban",
-	"has_api_key":     "api_key",
-	"has_password":    "password",
-	"has_credit_card": "credit_card",
-	"has_phone":       "phone",
-	"has_private_key": "private_key",
-	"has_personal_id": "personal_id",
+	"has_email":             "email",
+	"has_iban":              "iban",
+	"has_api_key":           "api_key",
+	"has_password":          "password",
+	"has_credit_card":       "credit_card",
+	"has_phone":             "phone",
+	"has_private_key":       "private_key",
+	"has_personal_id":       "personal_id",
+	"has_connection_string": "connection_string",
+	"has_jwt":               "jwt",
+	"has_wallet_secret":     "wallet_secret",
+	"has_webhook_secret":    "webhook_secret",
+	"has_postal_address":    "postal_address",
+	"has_person_name":       "person_name",
 }
 
 type Client struct {

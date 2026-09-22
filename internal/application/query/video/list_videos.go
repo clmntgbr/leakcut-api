@@ -32,7 +32,7 @@ func (h *ListVideosHandler) Handle(ctx context.Context, q ListVideosQuery) ([]do
 	}
 
 	for i := range views {
-		views[i].ThumbnailURL = presignThumbnailURL(ctx, h.storage, views[i].ID, views[i].ThumbnailKey)
+		views[i].ThumbnailURL = presignMediaURL(ctx, h.storage, views[i].ID, views[i].ThumbnailKey)
 	}
 	return views, total, nil
 }

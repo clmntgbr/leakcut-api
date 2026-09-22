@@ -22,6 +22,7 @@ type VideoWriteRepository interface {
 type VideoReadRepository interface {
 	FindByID(ctx context.Context, id, userID uuid.UUID) (*VideoView, error)
 	List(ctx context.Context, userID uuid.UUID, query paginate.PaginateQuery) ([]VideoListView, int64, error)
+	ListFramesByVideoID(ctx context.Context, id, userID uuid.UUID) ([]VideoFrameDetailView, error)
 }
 
 type JobView struct {
@@ -40,6 +41,7 @@ type VideoView struct {
 	StorageKey         string
 	ThumbnailKey       string
 	ThumbnailURL       string
+	VideoURL           string
 	SizeBytes          int64
 	ContentType        string
 	Status             string
@@ -52,6 +54,36 @@ type VideoView struct {
 	OCRCompletedCount  int
 	FailureReason      string
 	Jobs               []JobView
+	Frames             []VideoFrameDetailView
+}
+
+type FindingCategoryView struct {
+	Name        string  `json:"name"`
+	Probability float64 `json:"probability"`
+}
+
+type VideoFrameFindingView struct {
+	ID           uuid.UUID
+	Confidential bool
+	Probability  float64
+	Categories   []FindingCategoryView
+	Status       string
+	ErrorReason  string
+}
+
+type VideoFrameDetailView struct {
+	ID              uuid.UUID
+	Index           int
+	TimestampMs     int64
+	StorageKey      string
+	ImageURL        string
+	SelectionReason string
+	DiffScore       float64
+	OCRText         string
+	OCRStatus       string
+	OCRConfidence   float64
+	OCRErrorReason  string
+	Finding         *VideoFrameFindingView
 }
 
 type VideoListView struct {

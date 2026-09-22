@@ -90,6 +90,7 @@ func sampleVideoView() *domainvideo.VideoView {
 		StorageKey:       domainvideo.NewStorageKey(testutil.TestVideoID),
 		ThumbnailKey:     domainvideo.NewThumbnailStorageKey(testutil.TestVideoID),
 		ThumbnailURL:     "http://localhost:9000/media/videos/" + testutil.TestVideoID.String() + "/thumbnail.jpg",
+		VideoURL:         "http://localhost:9000/media/videos/" + testutil.TestVideoID.String() + "/original.mp4",
 		SizeBytes:        1024,
 		ContentType:      "video/mp4",
 		Status:           domainvideo.StatusPendingUpload,
@@ -103,6 +104,7 @@ func sampleVideoView() *domainvideo.VideoView {
 			Type:   "extract_frames",
 			Status: "pending",
 		}},
+		Frames: []domainvideo.VideoFrameDetailView{},
 	}
 }
 

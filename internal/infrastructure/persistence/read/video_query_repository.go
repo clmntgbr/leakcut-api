@@ -2,6 +2,7 @@ package read
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -151,6 +152,7 @@ func videoViewFromRow(row videoViewRow) *domainvideo.VideoView {
 		OCRCompletedCount:  row.OCRCompletedCount,
 		FailureReason:      failureReason,
 		Jobs:               jobs,
+		Frames:             make([]domainvideo.VideoFrameDetailView, 0),
 	}
 }
 
@@ -207,6 +209,95 @@ func normalizeVideoListSort(sortBy string) string {
 		return column
 	}
 	return "created_at"
+}
+
+type frameDetailRow struct {
+	ID              uuid.UUID  `gorm:"column:id"`
+	Index           int        `gorm:"column:index"`
+	TimestampMs     int64      `gorm:"column:timestamp_ms"`
+	StorageKey      string     `gorm:"column:storage_key"`
+	SelectionReason string     `gorm:"column:selection_reason"`
+	DiffScore       float64    `gorm:"column:diff_score"`
+	OCRText         string     `gorm:"column:ocr_text"`
+	OCRStatus       string     `gorm:"column:ocr_status"`
+	OCRConfidence   float64    `gorm:"column:ocr_confidence"`
+	OCRErrorReason  string     `gorm:"column:ocr_error_reason"`
+	FindingID       *uuid.UUID `gorm:"column:finding_id"`
+	Confidential    bool       `gorm:"column:confidential"`
+	Probability     float64    `gorm:"column:probability"`
+	Categories      string     `gorm:"column:categories"`
+	FindingStatus   string     `gorm:"column:finding_status"`
+	FindingError    string     `gorm:"column:finding_error"`
+}
+
+func (r *videoReadRepository) ListFramesByVideoID(ctx context.Context, id, userID uuid.UUID) ([]domainvideo.VideoFrameDetailView, error) {
+	var rows []frameDetailRow
+	err := r.db.WithContext(ctx).
+		Table("frames").
+		Select(`
+			frames.id,
+			frames.index,
+			frames.timestamp_ms,
+			frames.storage_key,
+			frames.selection_reason,
+			frames.diff_score,
+			COALESCE(ocr_results.text, '') AS ocr_text,
+			COALESCE(ocr_results.status, '') AS ocr_status,
+			COALESCE(ocr_results.confidence, 0) AS ocr_confidence,
+			COALESCE(ocr_results.error_reason, '') AS ocr_error_reason,
+			frame_findings.id AS finding_id,
+			COALESCE(frame_findings.confidential, FALSE) AS confidential,
+			COALESCE(frame_findings.probability, 0) AS probability,
+			COALESCE(frame_findings.categories::text, '[]') AS categories,
+			COALESCE(frame_findings.status, '') AS finding_status,
+			COALESCE(frame_findings.error_reason, '') AS finding_error
+		`).
+		Joins("JOIN jobs ON jobs.id = frames.job_id AND jobs.type = ?", domainjob.TypeExtractFrames).
+		Joins("JOIN videos ON videos.id = jobs.video_id").
+		Joins("LEFT JOIN ocr_results ON ocr_results.frame_id = frames.id").
+		Joins("LEFT JOIN frame_findings ON frame_findings.frame_id = frames.id").
+		Where("videos.id = ? AND videos.user_id = ?", id, userID).
+		Order("frames.index ASC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]domainvideo.VideoFrameDetailView, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, domainvideo.VideoFrameDetailView{
+			ID:              row.ID,
+			Index:           row.Index,
+			TimestampMs:     row.TimestampMs,
+			StorageKey:      row.StorageKey,
+			SelectionReason: row.SelectionReason,
+			DiffScore:       row.DiffScore,
+			OCRText:         row.OCRText,
+			OCRStatus:       row.OCRStatus,
+			OCRConfidence:   row.OCRConfidence,
+			OCRErrorReason:  row.OCRErrorReason,
+			Finding:         findingViewFromRow(row),
+		})
+	}
+	return out, nil
+}
+
+func findingViewFromRow(row frameDetailRow) *domainvideo.VideoFrameFindingView {
+	if row.FindingID == nil {
+		return nil
+	}
+	categories := make([]domainvideo.FindingCategoryView, 0)
+	if row.Categories != "" {
+		_ = json.Unmarshal([]byte(row.Categories), &categories)
+	}
+	return &domainvideo.VideoFrameFindingView{
+		ID:           *row.FindingID,
+		Confidential: row.Confidential,
+		Probability:  row.Probability,
+		Categories:   categories,
+		Status:       row.FindingStatus,
+		ErrorReason:  row.FindingError,
+	}
 }
 
 func escapeLike(value string) string {

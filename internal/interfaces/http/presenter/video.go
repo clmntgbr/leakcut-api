@@ -30,23 +30,54 @@ func NewVideoIngestResponse(result *cmdvideo.RequestIngestResult) VideoIngestRes
 }
 
 type VideoDetailResponse struct {
-	ID                 string             `json:"id"`
-	OriginalFilename   *string            `json:"originalFilename"`
-	StorageKey         string             `json:"storageKey"`
-	ThumbnailKey       *string            `json:"thumbnailKey"`
-	ThumbnailURL       *string            `json:"thumbnailUrl"`
-	SizeBytes          int64              `json:"sizeBytes"`
-	ContentType        *string            `json:"contentType"`
-	Status             string             `json:"status"`
-	JobID              *string            `json:"jobId"`
-	JobStatus          *string            `json:"jobStatus"`
-	FrameCount         int                `json:"frameCount"`
-	ExpectedFrameCount int                `json:"expectedFrameCount"`
-	OCRCompletedCount  int                `json:"ocrCompletedCount"`
-	FailureReason      *string            `json:"failureReason"`
-	Jobs               []VideoJobResponse `json:"jobs"`
-	CreatedAt          time.Time          `json:"createdAt"`
-	UpdatedAt          time.Time          `json:"updatedAt"`
+	ID                 string               `json:"id"`
+	OriginalFilename   *string              `json:"originalFilename"`
+	StorageKey         string               `json:"storageKey"`
+	ThumbnailKey       *string              `json:"thumbnailKey"`
+	ThumbnailURL       *string              `json:"thumbnailUrl"`
+	VideoURL           *string              `json:"videoUrl"`
+	SizeBytes          int64                `json:"sizeBytes"`
+	ContentType        *string              `json:"contentType"`
+	Status             string               `json:"status"`
+	JobID              *string              `json:"jobId"`
+	JobStatus          *string              `json:"jobStatus"`
+	FrameCount         int                  `json:"frameCount"`
+	ExpectedFrameCount int                  `json:"expectedFrameCount"`
+	OCRCompletedCount  int                  `json:"ocrCompletedCount"`
+	FailureReason      *string              `json:"failureReason"`
+	Jobs               []VideoJobResponse   `json:"jobs"`
+	Frames             []VideoFrameResponse `json:"frames"`
+	CreatedAt          time.Time            `json:"createdAt"`
+	UpdatedAt          time.Time            `json:"updatedAt"`
+}
+
+type VideoFrameResponse struct {
+	ID              string                `json:"id"`
+	Index           int                   `json:"index"`
+	TimestampMs     int64                 `json:"timestampMs"`
+	StorageKey      string                `json:"storageKey"`
+	ImageURL        *string               `json:"imageUrl"`
+	SelectionReason string                `json:"selectionReason"`
+	DiffScore       float64               `json:"diffScore"`
+	OCRText         string                `json:"ocrText"`
+	OCRStatus       *string               `json:"ocrStatus"`
+	OCRConfidence   float64               `json:"ocrConfidence"`
+	OCRErrorReason  *string               `json:"ocrErrorReason"`
+	Finding         *VideoFindingResponse `json:"finding"`
+}
+
+type VideoFindingCategoryResponse struct {
+	Name        string  `json:"name"`
+	Probability float64 `json:"probability"`
+}
+
+type VideoFindingResponse struct {
+	ID           string                         `json:"id"`
+	Confidential bool                           `json:"confidential"`
+	Probability  float64                        `json:"probability"`
+	Categories   []VideoFindingCategoryResponse `json:"categories"`
+	Status       string                         `json:"status"`
+	ErrorReason  *string                        `json:"errorReason"`
 }
 
 type VideoJobResponse struct {
@@ -88,6 +119,7 @@ func NewVideoDetailResponseFromView(view domainvideo.VideoView) VideoDetailRespo
 		StorageKey:         view.StorageKey,
 		ThumbnailKey:       optionalNonEmptyString(view.ThumbnailKey),
 		ThumbnailURL:       optionalNonEmptyString(view.ThumbnailURL),
+		VideoURL:           optionalNonEmptyString(view.VideoURL),
 		SizeBytes:          view.SizeBytes,
 		ContentType:        optionalNonEmptyString(view.ContentType),
 		Status:             view.Status,
@@ -98,8 +130,51 @@ func NewVideoDetailResponseFromView(view domainvideo.VideoView) VideoDetailRespo
 		OCRCompletedCount:  view.OCRCompletedCount,
 		FailureReason:      optionalNonEmptyString(view.FailureReason),
 		Jobs:               newVideoJobResponses(view.Jobs),
+		Frames:             newVideoFrameResponses(view.Frames),
 		CreatedAt:          view.CreatedAt,
 		UpdatedAt:          view.UpdatedAt,
+	}
+}
+
+func newVideoFrameResponses(views []domainvideo.VideoFrameDetailView) []VideoFrameResponse {
+	out := make([]VideoFrameResponse, 0, len(views))
+	for _, frame := range views {
+		out = append(out, VideoFrameResponse{
+			ID:              frame.ID.String(),
+			Index:           frame.Index,
+			TimestampMs:     frame.TimestampMs,
+			StorageKey:      frame.StorageKey,
+			ImageURL:        optionalNonEmptyString(frame.ImageURL),
+			SelectionReason: frame.SelectionReason,
+			DiffScore:       frame.DiffScore,
+			OCRText:         frame.OCRText,
+			OCRStatus:       optionalNonEmptyString(frame.OCRStatus),
+			OCRConfidence:   frame.OCRConfidence,
+			OCRErrorReason:  optionalNonEmptyString(frame.OCRErrorReason),
+			Finding:         newVideoFindingResponse(frame.Finding),
+		})
+	}
+	return out
+}
+
+func newVideoFindingResponse(view *domainvideo.VideoFrameFindingView) *VideoFindingResponse {
+	if view == nil {
+		return nil
+	}
+	categories := make([]VideoFindingCategoryResponse, 0, len(view.Categories))
+	for _, category := range view.Categories {
+		categories = append(categories, VideoFindingCategoryResponse{
+			Name:        category.Name,
+			Probability: category.Probability,
+		})
+	}
+	return &VideoFindingResponse{
+		ID:           view.ID.String(),
+		Confidential: view.Confidential,
+		Probability:  view.Probability,
+		Categories:   categories,
+		Status:       view.Status,
+		ErrorReason:  optionalNonEmptyString(view.ErrorReason),
 	}
 }
 
