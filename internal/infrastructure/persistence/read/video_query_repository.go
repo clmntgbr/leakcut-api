@@ -15,24 +15,27 @@ import (
 )
 
 type videoViewRow struct {
-	ID                   uuid.UUID
-	OriginalFilename     string
-	StorageKey           string
-	ThumbnailKey         string
-	SizeBytes            int64
-	ContentType          string
-	Status               string
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
-	ExtractJobID         *uuid.UUID
-	ExtractJobStatus     string
-	ExtractFailureReason string
-	OCRJobID             *uuid.UUID
-	OCRJobStatus         string
-	OCRFailureReason     string
-	FrameCount           int
-	ExpectedFrameCount   int
-	OCRCompletedCount    int
+	ID                    uuid.UUID
+	OriginalFilename      string
+	StorageKey            string
+	ThumbnailKey          string
+	SizeBytes             int64
+	ContentType           string
+	Status                string
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+	ExtractJobID          *uuid.UUID
+	ExtractJobStatus      string
+	ExtractFailureReason  string
+	OCRJobID              *uuid.UUID
+	OCRJobStatus          string
+	OCRFailureReason      string
+	ClassifyJobID         *uuid.UUID
+	ClassifyJobStatus     string
+	ClassifyFailureReason string
+	FrameCount            int
+	ExpectedFrameCount    int
+	OCRCompletedCount     int
 }
 
 func (videoViewRow) TableName() string { return "videos" }
@@ -65,12 +68,16 @@ func (r *videoReadRepository) FindByID(ctx context.Context, id, userID uuid.UUID
 			ocr_jobs.id AS ocr_job_id,
 			ocr_jobs.status AS ocr_job_status,
 			ocr_jobs.failure_reason AS ocr_failure_reason,
+			classify_jobs.id AS classify_job_id,
+			classify_jobs.status AS classify_job_status,
+			classify_jobs.failure_reason AS classify_failure_reason,
 			COALESCE(ocr_jobs.expected_frame_count, 0) AS expected_frame_count,
 			COALESCE(ocr_jobs.ocr_completed_count, 0) AS ocr_completed_count,
 			COALESCE((SELECT COUNT(*) FROM frames WHERE frames.job_id = extract_jobs.id), 0) AS frame_count
 		`).
 		Joins("LEFT JOIN jobs extract_jobs ON extract_jobs.video_id = videos.id AND extract_jobs.type = ?", domainjob.TypeExtractFrames).
 		Joins("LEFT JOIN jobs ocr_jobs ON ocr_jobs.video_id = videos.id AND ocr_jobs.type = ?", domainjob.TypeOCR).
+		Joins("LEFT JOIN jobs classify_jobs ON classify_jobs.video_id = videos.id AND classify_jobs.type = ?", domainjob.TypeClassify).
 		Where("videos.id = ? AND videos.user_id = ?", id, userID).
 		Take(&row).Error
 	if err != nil {
@@ -84,7 +91,7 @@ func (r *videoReadRepository) FindByID(ctx context.Context, id, userID uuid.UUID
 }
 
 func videoViewFromRow(row videoViewRow) *domainvideo.VideoView {
-	jobs := make([]domainvideo.JobView, 0, 2)
+	jobs := make([]domainvideo.JobView, 0, 3)
 	if row.ExtractJobID != nil {
 		jobs = append(jobs, domainvideo.JobView{
 			ID:            *row.ExtractJobID,
@@ -104,6 +111,14 @@ func videoViewFromRow(row videoViewRow) *domainvideo.VideoView {
 			FailureReason:      row.OCRFailureReason,
 		})
 	}
+	if row.ClassifyJobID != nil {
+		jobs = append(jobs, domainvideo.JobView{
+			ID:            *row.ClassifyJobID,
+			Type:          domainjob.TypeClassify,
+			Status:        row.ClassifyJobStatus,
+			FailureReason: row.ClassifyFailureReason,
+		})
+	}
 
 	currentID := row.ExtractJobID
 	currentStatus := row.ExtractJobStatus
@@ -112,6 +127,11 @@ func videoViewFromRow(row videoViewRow) *domainvideo.VideoView {
 		currentID = row.OCRJobID
 		currentStatus = row.OCRJobStatus
 		failureReason = row.OCRFailureReason
+	}
+	if row.ClassifyJobID != nil {
+		currentID = row.ClassifyJobID
+		currentStatus = row.ClassifyJobStatus
+		failureReason = row.ClassifyFailureReason
 	}
 
 	return &domainvideo.VideoView{

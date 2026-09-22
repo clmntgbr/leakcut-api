@@ -27,7 +27,7 @@ Requires authentication.
 | `user.deleted` | User deleted |
 | `video.created` | Video created (`pending_upload`) |
 | `video.uploaded` | Upload confirmed (`extraction_queued`) |
-| `job.updated` | Job moved to `extracting_frames`, `frames_ready`, `ocr_processing`, `ocr_ready`, `ocr_failed`, or `failed` |
+| `job.updated` | Job moved to `extracting_frames`, `frames_ready`, `ocr_processing`, `ocr_ready`, `ocr_failed`, `classifying`, `classified`, `classify_failed`, or `failed` |
 
 Video/job events are published only to the owner (`users:<userId>`). Webhook-ingested videos without a user are not pushed.
 
@@ -39,6 +39,8 @@ Video/job events are published only to the owner (`users:<userId>`). Webhook-ing
 { "type": "job.updated", "id": "...", "videoId": "...", "jobType": "ocr", "status": "ocr_processing", "videoStatus": "ocr_processing", "expectedFrameCount": 12, "ocrCompletedCount": 0, "occurredAt": "..." }
 { "type": "job.updated", "id": "...", "videoId": "...", "jobType": "ocr", "status": "ocr_ready", "videoStatus": "ocr_ready", "frameCount": 12, "expectedFrameCount": 12, "ocrCompletedCount": 12, "occurredAt": "..." }
 { "type": "job.updated", "id": "...", "videoId": "...", "jobType": "ocr", "status": "ocr_failed", "videoStatus": "ocr_failed", "failureReason": "ocr service unavailable", "occurredAt": "..." }
+{ "type": "job.updated", "id": "...", "videoId": "...", "jobType": "classify", "status": "classifying", "videoStatus": "classifying", "expectedFrameCount": 12, "occurredAt": "..." }
+{ "type": "job.updated", "id": "...", "videoId": "...", "jobType": "classify", "status": "classified", "videoStatus": "classified", "frameCount": 12, "occurredAt": "..." }
 { "type": "job.updated", "id": "...", "videoId": "...", "jobType": "extract_frames", "status": "failed", "videoStatus": "extraction_failed", "failureReason": "unreadable video", "occurredAt": "..." }
 ```
 

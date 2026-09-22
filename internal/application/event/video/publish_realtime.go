@@ -148,6 +148,56 @@ func (h *PublishRealtimeHandler) OnOCRCompleted(ctx context.Context, payload []b
 	})
 }
 
+func (h *PublishRealtimeHandler) OnClassifying(ctx context.Context, payload []byte) error {
+	evt, err := decodeVideoEvent[domainvideo.VideoClassifying](payload)
+	if err != nil {
+		return err
+	}
+	return h.publishToOwner(ctx, realtime.EntityJob, realtime.ActionUpdated, evt.UserID, jobRealtimePayload{
+		ID:                 evt.JobID,
+		VideoID:            evt.VideoID,
+		Type:               evt.JobType,
+		Status:             evt.JobStatus,
+		VideoStatus:        evt.Status,
+		ExpectedFrameCount: evt.ExpectedFrameCount,
+		OccurredAt:         evt.Timestamp,
+	})
+}
+
+func (h *PublishRealtimeHandler) OnClassified(ctx context.Context, payload []byte) error {
+	evt, err := decodeVideoEvent[domainvideo.VideoFramesClassified](payload)
+	if err != nil {
+		return err
+	}
+	return h.publishToOwner(ctx, realtime.EntityJob, realtime.ActionUpdated, evt.UserID, jobRealtimePayload{
+		ID:                 evt.JobID,
+		VideoID:            evt.VideoID,
+		Type:               evt.JobType,
+		Status:             evt.JobStatus,
+		VideoStatus:        evt.Status,
+		FrameCount:         evt.ExpectedFrameCount,
+		ExpectedFrameCount: evt.ExpectedFrameCount,
+		OccurredAt:         evt.Timestamp,
+	})
+}
+
+func (h *PublishRealtimeHandler) OnClassifyFailed(ctx context.Context, payload []byte) error {
+	evt, err := decodeVideoEvent[domainvideo.VideoClassifyFailed](payload)
+	if err != nil {
+		return err
+	}
+	return h.publishToOwner(ctx, realtime.EntityJob, realtime.ActionUpdated, evt.UserID, jobRealtimePayload{
+		ID:                 evt.JobID,
+		VideoID:            evt.VideoID,
+		Type:               evt.JobType,
+		Status:             evt.JobStatus,
+		VideoStatus:        evt.Status,
+		ExpectedFrameCount: evt.ExpectedFrameCount,
+		FailureReason:      evt.Reason,
+		OccurredAt:         evt.Timestamp,
+	})
+}
+
 func (h *PublishRealtimeHandler) OnOCRFailed(ctx context.Context, payload []byte) error {
 	evt, err := decodeVideoEvent[domainvideo.VideoOCRFailed](payload)
 	if err != nil {

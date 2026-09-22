@@ -18,6 +18,7 @@ func Models() []any {
 		&write.JobModel{},
 		&write.FrameModel{},
 		&write.OCRResultModel{},
+		&write.FindingModel{},
 		&outbox.OutboxEvent{},
 		&processed.ProcessedEvent{},
 	}

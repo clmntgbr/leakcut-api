@@ -18,7 +18,7 @@ dev-down:
 	$(COMPOSE_DEV) down
 
 dev-logs:
-	$(COMPOSE_DEV) logs -f api worker frame ocr
+	$(COMPOSE_DEV) logs -f api worker frame ocr classify
 
 api-logs:
 	$(COMPOSE_DEV) logs -f api
@@ -38,8 +38,11 @@ frame-logs:
 ocr-logs:
 	$(COMPOSE_DEV) logs -f ocr
 
+classify-logs:
+	$(COMPOSE_DEV) logs -f classify
+
 restart:
-	$(COMPOSE_DEV) restart api worker frame ocr
+	$(COMPOSE_DEV) restart api worker frame ocr classify
 
 lint:
 	$(COMPOSE_DEV) exec api golangci-lint run --fix

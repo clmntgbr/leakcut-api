@@ -12,6 +12,9 @@ const (
 	EventTypeVideoOCRProcessing         = "video.ocr_processing.v1"
 	EventTypeVideoFramesOCRCompleted    = "video.frames_ocr_completed.v1"
 	EventTypeVideoOCRFailed             = "video.ocr_failed.v1"
+	EventTypeVideoClassifying           = "video.classifying.v1"
+	EventTypeVideoFramesClassified      = "video.frames_classified.v1"
+	EventTypeVideoClassifyFailed        = "video.classify_failed.v1"
 	EventTypeVideoUploadExpired         = "video.upload_expired.v1"
 )
 
@@ -183,6 +186,72 @@ func (e VideoOCRFailed) EventID() string       { return e.ID }
 func (e VideoOCRFailed) EventType() string     { return EventTypeVideoOCRFailed }
 func (e VideoOCRFailed) AggregateID() string   { return e.VideoID }
 func (e VideoOCRFailed) OccurredAt() time.Time { return e.Timestamp }
+
+type VideoClassifying struct {
+	ID                 string    `json:"eventId"`
+	VideoID            string    `json:"videoId"`
+	UserID             string    `json:"userId,omitempty"`
+	JobID              string    `json:"jobId"`
+	JobType            string    `json:"jobType,omitempty"`
+	Status             string    `json:"status"`
+	JobStatus          string    `json:"jobStatus"`
+	ExpectedFrameCount int       `json:"expectedFrameCount"`
+	Timestamp          time.Time `json:"timestamp"`
+}
+
+func (e VideoClassifying) EventID() string       { return e.ID }
+func (e VideoClassifying) EventType() string     { return EventTypeVideoClassifying }
+func (e VideoClassifying) AggregateID() string   { return e.VideoID }
+func (e VideoClassifying) OccurredAt() time.Time { return e.Timestamp }
+
+type FindingCategoryPayload struct {
+	Name        string  `json:"name"`
+	Probability float64 `json:"probability"`
+}
+
+type FrameFindingPayload struct {
+	FrameID      string                   `json:"frameId"`
+	Confidential bool                     `json:"confidential"`
+	Probability  float64                  `json:"probability"`
+	Categories   []FindingCategoryPayload `json:"categories"`
+	Status       string                   `json:"status"`
+}
+
+type VideoFramesClassified struct {
+	ID                 string                `json:"eventId"`
+	VideoID            string                `json:"videoId"`
+	UserID             string                `json:"userId,omitempty"`
+	JobID              string                `json:"jobId"`
+	JobType            string                `json:"jobType,omitempty"`
+	Status             string                `json:"status"`
+	JobStatus          string                `json:"jobStatus"`
+	ExpectedFrameCount int                   `json:"expectedFrameCount"`
+	Findings           []FrameFindingPayload `json:"findings"`
+	Timestamp          time.Time             `json:"timestamp"`
+}
+
+func (e VideoFramesClassified) EventID() string       { return e.ID }
+func (e VideoFramesClassified) EventType() string     { return EventTypeVideoFramesClassified }
+func (e VideoFramesClassified) AggregateID() string   { return e.VideoID }
+func (e VideoFramesClassified) OccurredAt() time.Time { return e.Timestamp }
+
+type VideoClassifyFailed struct {
+	ID                 string    `json:"eventId"`
+	VideoID            string    `json:"videoId"`
+	UserID             string    `json:"userId,omitempty"`
+	JobID              string    `json:"jobId"`
+	JobType            string    `json:"jobType,omitempty"`
+	Status             string    `json:"status"`
+	JobStatus          string    `json:"jobStatus"`
+	Reason             string    `json:"reason"`
+	ExpectedFrameCount int       `json:"expectedFrameCount"`
+	Timestamp          time.Time `json:"timestamp"`
+}
+
+func (e VideoClassifyFailed) EventID() string       { return e.ID }
+func (e VideoClassifyFailed) EventType() string     { return EventTypeVideoClassifyFailed }
+func (e VideoClassifyFailed) AggregateID() string   { return e.VideoID }
+func (e VideoClassifyFailed) OccurredAt() time.Time { return e.Timestamp }
 
 type VideoUploadExpired struct {
 	ID        string    `json:"eventId"`

@@ -60,6 +60,15 @@ type Config struct {
 	OCRMinConfidence        float64
 	OCRLang                 string
 	OCRTimeout              time.Duration
+	ClassifyQueue           string
+	ClassifyRoutingKey      string
+	ClassifyConcurrency     int
+	ClassifyEngineTimeout   time.Duration
+	ClassifyTimeout         time.Duration
+	ClassifyThreshold       float64
+	AIGatewayURL            string
+	AIGatewayAPIKey         string
+	JevModel                string
 }
 
 func Load() *Config {
@@ -116,7 +125,25 @@ func Load() *Config {
 		OCRMinConfidence:        getEnvFloatOrDefault("OCR_MIN_CONFIDENCE", 0.5),
 		OCRLang:                 getEnvOrDefault("OCR_LANG", "fr+en"),
 		OCRTimeout:              getEnvDuration("OCR_TIMEOUT", 15*time.Minute),
+		ClassifyQueue:           getEnvOrDefault("CLASSIFY_QUEUE", "classify"),
+		ClassifyRoutingKey:      getEnvOrDefault("CLASSIFY_ROUTING_KEY", "video.frames_ocr_completed.v1"),
+		ClassifyConcurrency:     getEnvIntOrDefault("CLASSIFY_CONCURRENCY", 4),
+		ClassifyEngineTimeout:   getEnvDuration("CLASSIFY_ENGINE_TIMEOUT", 30*time.Second),
+		ClassifyTimeout:         getEnvDuration("CLASSIFY_TIMEOUT", 10*time.Minute),
+		ClassifyThreshold:       getEnvFloatOrDefault("CLASSIFY_THRESHOLD", 0.7),
+		AIGatewayURL:            getEnvOrDefault("AI_GATEWAY_URL", "https://ai-gateway.vercel.sh"),
+		AIGatewayAPIKey:         firstNonEmpty(os.Getenv("AI_GATEWAY_API_KEY"), os.Getenv("JEV_API_KEY")),
+		JevModel:                getEnvOrDefault("JEV_MODEL", "typesafe-ai/jev"),
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func splitCSV(raw string) []string {

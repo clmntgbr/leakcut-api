@@ -344,6 +344,15 @@ func (h *OCRFramesHandler) markReady(
 		if err := h.jobRepo.Update(txCtx, job); err != nil {
 			return err
 		}
+		classifyJob, err := h.jobRepo.GetByVideoIDAndType(txCtx, video.ID, domainjob.TypeClassify)
+		if err != nil {
+			return err
+		}
+		if classifyJob == nil {
+			if err := h.jobRepo.Save(txCtx, domainjob.NewClassifyJob(video.ID)); err != nil {
+				return err
+			}
+		}
 		return h.outbox.StoreEvents(txCtx, video.PullEvents())
 	})
 }

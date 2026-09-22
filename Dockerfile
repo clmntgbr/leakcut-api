@@ -56,6 +56,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o frame \
     ./cmd/frame
 
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -a -installsuffix cgo \
+    -ldflags="-w -s" \
+    -o classify \
+    ./cmd/classify
+
 
 # ============================================
 # Production stage - Minimal runtime
@@ -73,6 +79,7 @@ COPY --from=builder --chown=appuser:appuser /app/api .
 COPY --from=builder --chown=appuser:appuser /app/worker .
 COPY --from=builder --chown=appuser:appuser /app/cli .
 COPY --from=builder --chown=appuser:appuser /app/frame .
+COPY --from=builder --chown=appuser:appuser /app/classify .
 
 USER appuser
 

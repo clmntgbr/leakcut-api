@@ -49,3 +49,13 @@ services:
       retries: 10
       start_period: 60s
     restart: unless-stopped
+
+  classify:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    command: ["./classify"]
+    env_file:
+      - .env
+    restart: unless-stopped

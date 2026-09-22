@@ -9,6 +9,7 @@ import (
 const (
 	TypeExtractFrames = "extract_frames"
 	TypeOCR           = "ocr"
+	TypeClassify      = "classify"
 )
 
 const (
@@ -18,6 +19,9 @@ const (
 	StatusOCRProcessing    = "ocr_processing"
 	StatusOCRReady         = "ocr_ready"
 	StatusOCRFailed        = "ocr_failed"
+	StatusClassifying      = "classifying"
+	StatusClassified       = "classified"
+	StatusClassifyFailed   = "classify_failed"
 	StatusFailed           = "failed"
 )
 
@@ -65,6 +69,16 @@ func NewOCRJob(videoID uuid.UUID) *Job {
 	}
 }
 
+func NewClassifyJob(videoID uuid.UUID) *Job {
+	return &Job{
+		ID:        uuid.New(),
+		VideoID:   videoID,
+		Type:      TypeClassify,
+		Status:    StatusPending,
+		CreatedAt: time.Now().UTC(),
+	}
+}
+
 func (j *Job) MarkExtracting() {
 	j.Status = StatusExtractingFrames
 	j.FailureReason = ""
@@ -104,6 +118,27 @@ func (j *Job) MarkOCRReady() {
 func (j *Job) MarkOCRFailed(reason string) {
 	now := time.Now().UTC()
 	j.Status = StatusOCRFailed
+	j.FailureReason = reason
+	j.CompletedAt = &now
+}
+
+func (j *Job) MarkClassifying(expected int) {
+	j.Status = StatusClassifying
+	j.FailureReason = ""
+	j.ExpectedFrameCount = expected
+	j.CompletedAt = nil
+}
+
+func (j *Job) MarkClassified() {
+	now := time.Now().UTC()
+	j.Status = StatusClassified
+	j.FailureReason = ""
+	j.CompletedAt = &now
+}
+
+func (j *Job) MarkClassifyFailed(reason string) {
+	now := time.Now().UTC()
+	j.Status = StatusClassifyFailed
 	j.FailureReason = reason
 	j.CompletedAt = &now
 }
