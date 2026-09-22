@@ -204,9 +204,9 @@ Chaque tâche a son propre `Job` (`internal/domain/job`) : `extract_frames` à l
 
 | Pièce | Emplacement |
 |---|---|
-| Worker Go | `cmd/ocr` — queue `ocr`, routing key `video.frames_extracted.v1` |
+| Worker Go | `cmd/worker` — handler `ocr_frames_on_frames_extracted` sur `video.frames_extracted.v1` |
 | Commande | `internal/application/command/video/ocr_frames.go` |
-| Service PaddleOCR | `ocr-service/` — FastAPI `POST /ocr` |
+| Service OCR | `cmd/ocr/` — FastAPI `POST /ocr` (PaddleOCR) |
 | Client HTTP | `internal/infrastructure/ocr/paddle.go` |
 | Persistance | `ocr_results` + compteurs `jobs.expected_frame_count` / `jobs.ocr_completed_count` (migration `00010`) |
 | Événement de sortie | `video.frames_ocr_completed.v1` (outbox → RabbitMQ) |

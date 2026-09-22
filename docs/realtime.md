@@ -38,7 +38,7 @@ Video/job events are published only to the owner (`users:<userId>`). Webhook-ing
 { "type": "job.updated", "id": "...", "videoId": "...", "jobType": "extract_frames", "status": "frames_ready", "videoStatus": "frames_ready", "frameCount": 12, "occurredAt": "..." }
 { "type": "job.updated", "id": "...", "videoId": "...", "jobType": "ocr", "status": "ocr_processing", "videoStatus": "ocr_processing", "expectedFrameCount": 12, "ocrCompletedCount": 0, "occurredAt": "..." }
 { "type": "job.updated", "id": "...", "videoId": "...", "jobType": "ocr", "status": "ocr_ready", "videoStatus": "ocr_ready", "frameCount": 12, "expectedFrameCount": 12, "ocrCompletedCount": 12, "occurredAt": "..." }
-{ "type": "job.updated", "id": "...", "videoId": "...", "jobType": "ocr", "status": "ocr_failed", "videoStatus": "ocr_failed", "failureReason": "paddleocr unavailable", "occurredAt": "..." }
+{ "type": "job.updated", "id": "...", "videoId": "...", "jobType": "ocr", "status": "ocr_failed", "videoStatus": "ocr_failed", "failureReason": "ocr service unavailable", "occurredAt": "..." }
 { "type": "job.updated", "id": "...", "videoId": "...", "jobType": "extract_frames", "status": "failed", "videoStatus": "extraction_failed", "failureReason": "unreadable video", "occurredAt": "..." }
 ```
 

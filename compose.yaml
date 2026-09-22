@@ -36,30 +36,17 @@ services:
 
   ocr:
     build:
-      context: .
+      context: ./cmd/ocr
       dockerfile: Dockerfile
-      target: production
     container_name: ocr
-    command: ["./ocr"]
-    env_file:
-      - .env
-    depends_on:
-      paddleocr:
-        condition: service_healthy
-    restart: unless-stopped
-
-  paddleocr:
-    build:
-      context: ./ocr-service
-      dockerfile: Dockerfile
-    container_name: paddleocr
+    shm_size: "1gb"
     environment:
       OCR_LANG: ${OCR_LANG:-fr+en}
       PADDLEOCR_VERSION: ${PADDLEOCR_VERSION:-PP-OCRv5}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
-      retries: 20
+      retries: 10
       start_period: 180s
     restart: unless-stopped

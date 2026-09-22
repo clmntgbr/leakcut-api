@@ -1,7 +1,15 @@
+import os
+
+os.environ.setdefault("FLAGS_use_mkldnn", "0")
+os.environ.setdefault("FLAGS_enable_pir_api", "0")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("KMP_AFFINITY", "disabled")
+
 import base64
 import io
 import logging
-import os
 import threading
 from typing import Any
 
@@ -10,10 +18,10 @@ from fastapi import FastAPI, HTTPException
 from PIL import Image
 from pydantic import BaseModel, Field
 
-logger = logging.getLogger("paddleocr")
+logger = logging.getLogger("ocr")
 logging.basicConfig(level=logging.INFO)
 
-app = FastAPI(title="paddleocr-service")
+app = FastAPI(title="ocr")
 ocr_engine = None
 ocr_lock = threading.Lock()
 
@@ -77,9 +85,9 @@ def load_engine():
 @app.on_event("startup")
 def startup() -> None:
     global ocr_engine
-    logger.info("loading paddleocr models")
+    logger.info("loading ocr models")
     ocr_engine = load_engine()
-    logger.info("paddleocr models ready")
+    logger.info("ocr models ready")
 
 
 @app.get("/health")

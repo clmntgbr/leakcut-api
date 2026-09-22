@@ -103,7 +103,7 @@ func (h *OCRFramesHandler) Handle(ctx context.Context, cmd OCRFramesCommand) err
 	for _, batch := range chunkFrames(pending, h.batchSize) {
 		results, recErr := h.recognizeBatch(ctx, batch)
 		if recErr != nil {
-			return h.failOrRetry(ctx, video, job, recErr, "paddleocr unavailable")
+			return h.failOrRetry(ctx, video, job, recErr, "ocr service unavailable")
 		}
 		if err := h.persistBatch(ctx, job, results, known); err != nil {
 			return h.failOrRetry(ctx, video, job, err, "failed to persist ocr results")

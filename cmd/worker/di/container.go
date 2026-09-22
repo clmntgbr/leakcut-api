@@ -15,6 +15,7 @@ import (
 	"go-api/internal/infrastructure/config"
 	"go-api/internal/infrastructure/messaging/rabbitmq"
 	"go-api/internal/infrastructure/notification"
+	"go-api/internal/infrastructure/ocr"
 	"go-api/internal/infrastructure/persistence/outbox"
 	"go-api/internal/infrastructure/persistence/processed"
 	"go-api/internal/infrastructure/persistence/write"
@@ -94,10 +95,26 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 
 	videoWriteRepo := write.NewVideoWriteRepository(db)
 	jobWriteRepo := write.NewJobWriteRepository(db)
+	frameWriteRepo := write.NewFrameWriteRepository(db)
+	ocrWriteRepo := write.NewOCRResultWriteRepository(db)
 	minioStorage, err := storage.NewMinIOStorage(env)
 	if err != nil {
 		log.Fatalf("failed to create storage client: %v", err)
 	}
+
+	ocrHandler := videocommand.NewOCRFramesHandler(
+		videoWriteRepo,
+		jobWriteRepo,
+		frameWriteRepo,
+		ocrWriteRepo,
+		outboxRepo,
+		minioStorage,
+		ocr.NewClient(env.OCRURL, env.OCREngineTimeout),
+		env.OCRBatchSize,
+		env.OCRMinConfidence,
+		env.OCRLang,
+		env.OCRTimeout,
+	)
 
 	confirmUploadHandler := videocommand.NewConfirmUploadHandler(videoWriteRepo, jobWriteRepo, outboxRepo, env.VideoMaxSizeBytes)
 	ingestRemoteHandler := videocommand.NewIngestRemoteHandler(
@@ -132,6 +149,11 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 		dedupRepo,
 		"publish_video_frames_extracted_realtime",
 		publishVideoRealtime.OnFramesExtracted,
+	))
+	reg.Register(domainvideo.EventTypeVideoFramesExtracted, dedup.With(
+		dedupRepo,
+		"ocr_frames_on_frames_extracted",
+		eventvideo.NewOCRFramesOnExtractedHandler(ocrHandler).Handle,
 	))
 	reg.Register(domainvideo.EventTypeVideoFrameExtractionFailed, dedup.With(
 		dedupRepo,

@@ -18,7 +18,7 @@ dev-down:
 	$(COMPOSE_DEV) down
 
 dev-logs:
-	$(COMPOSE_DEV) logs -f api worker frame ocr paddleocr
+	$(COMPOSE_DEV) logs -f api worker frame ocr
 
 api-logs:
 	$(COMPOSE_DEV) logs -f api
@@ -36,7 +36,7 @@ frame-logs:
 	$(COMPOSE_DEV) logs -f frame
 
 ocr-logs:
-	$(COMPOSE_DEV) logs -f ocr paddleocr
+	$(COMPOSE_DEV) logs -f ocr
 
 restart:
 	$(COMPOSE_DEV) restart api worker frame ocr

@@ -54,7 +54,7 @@ type recognizeResult struct {
 
 func (c *Client) Recognize(ctx context.Context, images []port.OCRImage, lang string) ([]port.OCRItemResult, error) {
 	if c.baseURL == "" {
-		return nil, fmt.Errorf("paddleocr url is not configured")
+		return nil, fmt.Errorf("ocr url is not configured")
 	}
 
 	payload := recognizeRequest{Lang: lang, Images: make([]recognizeImage, 0, len(images))}
@@ -87,7 +87,7 @@ func (c *Client) Recognize(ctx context.Context, images []port.OCRImage, lang str
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("paddleocr returned %d", resp.StatusCode)
+		return nil, fmt.Errorf("ocr service returned %d", resp.StatusCode)
 	}
 
 	var decoded recognizeResponse
