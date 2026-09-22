@@ -53,7 +53,7 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 	notifier := notification.NewLogNotifier()
 	realtimePublisher := centrifugo.NewPublisher(env)
 	publishUserRealtime := eventuser.NewPublishRealtimeHandler(realtimePublisher)
-	publishVideoRealtime := eventvideo.NewPublishRealtimeHandler()
+	publishVideoRealtime := eventvideo.NewPublishRealtimeHandler(realtimePublisher)
 	reg := registry.NewHandlerRegistry()
 
 	reg.Register(domainuser.EventTypeUserCreated, dedup.With(
@@ -93,13 +93,13 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 	))
 
 	videoWriteRepo := write.NewVideoWriteRepository(db)
-	scanJobWriteRepo := write.NewScanJobWriteRepository(db)
+	jobWriteRepo := write.NewJobWriteRepository(db)
 	minioStorage, err := storage.NewMinIOStorage(env)
 	if err != nil {
 		log.Fatalf("failed to create storage client: %v", err)
 	}
 
-	confirmUploadHandler := videocommand.NewConfirmUploadHandler(videoWriteRepo, scanJobWriteRepo, outboxRepo, env.VideoMaxSizeBytes)
+	confirmUploadHandler := videocommand.NewConfirmUploadHandler(videoWriteRepo, jobWriteRepo, outboxRepo, env.VideoMaxSizeBytes)
 	ingestRemoteHandler := videocommand.NewIngestRemoteHandler(
 		videoWriteRepo,
 		remote.NewFetcher(env.VideoIngestAllowedHosts, env.Environment == "development"),
@@ -123,6 +123,11 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 		"publish_video_uploaded_realtime",
 		publishVideoRealtime.OnUploaded,
 	))
+	reg.Register(domainvideo.EventTypeVideoExtracting, dedup.With(
+		dedupRepo,
+		"publish_video_extracting_realtime",
+		publishVideoRealtime.OnExtracting,
+	))
 	reg.Register(domainvideo.EventTypeVideoFramesExtracted, dedup.With(
 		dedupRepo,
 		"publish_video_frames_extracted_realtime",
@@ -132,11 +137,6 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 		dedupRepo,
 		"publish_video_extraction_failed_realtime",
 		publishVideoRealtime.OnExtractionFailed,
-	))
-	reg.Register(domainvideo.EventTypeVideoUploadExpired, dedup.With(
-		dedupRepo,
-		"publish_video_upload_expired_realtime",
-		publishVideoRealtime.OnUploadExpired,
 	))
 
 	consumer := rabbitmq.NewConsumer(conn, reg, env.WorkerConcurrency, env.WorkerMaxRetries)

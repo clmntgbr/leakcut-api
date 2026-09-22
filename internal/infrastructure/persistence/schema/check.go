@@ -15,7 +15,7 @@ func Models() []any {
 	return []any{
 		&write.UserModel{},
 		&write.VideoModel{},
-		&write.ScanJobModel{},
+		&write.JobModel{},
 		&write.FrameModel{},
 		&outbox.OutboxEvent{},
 		&processed.ProcessedEvent{},

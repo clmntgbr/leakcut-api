@@ -1,4 +1,4 @@
-package scanjob
+package job
 
 import (
 	"time"
@@ -19,7 +19,7 @@ const (
 	DefaultMaxIntervalSeconds = 10
 )
 
-type ScanJob struct {
+type Job struct {
 	ID                 uuid.UUID
 	VideoID            uuid.UUID
 	Status             string
@@ -31,8 +31,8 @@ type ScanJob struct {
 	CompletedAt        *time.Time
 }
 
-func NewScanJob(videoID uuid.UUID) *ScanJob {
-	return &ScanJob{
+func NewJob(videoID uuid.UUID) *Job {
+	return &Job{
 		ID:                 uuid.New(),
 		VideoID:            videoID,
 		Status:             StatusPending,
@@ -43,19 +43,19 @@ func NewScanJob(videoID uuid.UUID) *ScanJob {
 	}
 }
 
-func (j *ScanJob) MarkExtracting() {
+func (j *Job) MarkExtracting() {
 	j.Status = StatusExtractingFrames
 	j.FailureReason = ""
 }
 
-func (j *ScanJob) MarkFramesReady() {
+func (j *Job) MarkFramesReady() {
 	now := time.Now().UTC()
 	j.Status = StatusFramesReady
 	j.FailureReason = ""
 	j.CompletedAt = &now
 }
 
-func (j *ScanJob) MarkFailed(reason string) {
+func (j *Job) MarkFailed(reason string) {
 	now := time.Now().UTC()
 	j.Status = StatusFailed
 	j.FailureReason = reason

@@ -9,8 +9,3 @@ const (
 	StatusExtractionFailed = "extraction_failed"
 	StatusUploadExpired    = "upload_expired"
 )
-
-const (
-	SourcePresignedUpload = "presigned_upload"
-	SourceWebhook         = "webhook"
-)

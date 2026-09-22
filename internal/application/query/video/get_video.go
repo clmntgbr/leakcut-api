@@ -2,7 +2,7 @@ package video
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -31,7 +31,7 @@ func NewGetVideoByIDHandler(readRepo domainvideo.VideoReadRepository, storage po
 func (h *GetVideoByIDHandler) Handle(ctx context.Context, q GetVideoByIDQuery) (*domainvideo.VideoView, error) {
 	view, err := h.readRepo.FindByID(ctx, q.ID, q.UserID)
 	if err != nil {
-		return nil, errors.New("failed to get video")
+		return nil, fmt.Errorf("failed to get video: %w", err)
 	}
 	if view == nil {
 		return nil, domainvideo.ErrVideoNotFound

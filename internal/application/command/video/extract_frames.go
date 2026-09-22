@@ -11,8 +11,8 @@ import (
 
 	"go-api/internal/application/messaging"
 	domainframe "go-api/internal/domain/frame"
+	domainjob "go-api/internal/domain/job"
 	"go-api/internal/domain/port"
-	domainscanjob "go-api/internal/domain/scanjob"
 	domainvideo "go-api/internal/domain/video"
 
 	"github.com/google/uuid"
@@ -23,18 +23,18 @@ type ExtractFramesCommand struct {
 }
 
 type ExtractFramesHandler struct {
-	videoRepo   domainvideo.VideoWriteRepository
-	scanJobRepo domainscanjob.ScanJobWriteRepository
-	frameRepo   domainframe.FrameWriteRepository
-	outbox      port.OutboxRepository
-	storage     port.Storage
-	extractor   port.FrameExtractor
-	timeout     time.Duration
+	videoRepo domainvideo.VideoWriteRepository
+	jobRepo   domainjob.JobWriteRepository
+	frameRepo domainframe.FrameWriteRepository
+	outbox    port.OutboxRepository
+	storage   port.Storage
+	extractor port.FrameExtractor
+	timeout   time.Duration
 }
 
 func NewExtractFramesHandler(
 	videoRepo domainvideo.VideoWriteRepository,
-	scanJobRepo domainscanjob.ScanJobWriteRepository,
+	jobRepo domainjob.JobWriteRepository,
 	frameRepo domainframe.FrameWriteRepository,
 	outbox port.OutboxRepository,
 	storage port.Storage,
@@ -42,13 +42,13 @@ func NewExtractFramesHandler(
 	timeout time.Duration,
 ) *ExtractFramesHandler {
 	return &ExtractFramesHandler{
-		videoRepo:   videoRepo,
-		scanJobRepo: scanJobRepo,
-		frameRepo:   frameRepo,
-		outbox:      outbox,
-		storage:     storage,
-		extractor:   extractor,
-		timeout:     timeout,
+		videoRepo: videoRepo,
+		jobRepo:   jobRepo,
+		frameRepo: frameRepo,
+		outbox:    outbox,
+		storage:   storage,
+		extractor: extractor,
+		timeout:   timeout,
 	}
 }
 
@@ -72,8 +72,8 @@ func (h *ExtractFramesHandler) Handle(ctx context.Context, cmd ExtractFramesComm
 
 	frames, extractErr := h.extractAndStore(ctx, video, job)
 	if extractErr != nil {
-		_ = h.markFailed(ctx, video, job, publicReason(extractErr))
 		if isNonRetryableExtract(extractErr) {
+			_ = h.markFailed(ctx, video, job, publicReason(extractErr))
 			return messaging.NonRetryable(extractErr)
 		}
 		return messaging.Retryable(extractErr)
@@ -85,7 +85,7 @@ func (h *ExtractFramesHandler) Handle(ctx context.Context, cmd ExtractFramesComm
 	return nil
 }
 
-func (h *ExtractFramesHandler) load(ctx context.Context, videoID uuid.UUID) (*domainvideo.Video, *domainscanjob.ScanJob, error) {
+func (h *ExtractFramesHandler) load(ctx context.Context, videoID uuid.UUID) (*domainvideo.Video, *domainjob.Job, error) {
 	video, err := h.videoRepo.GetByID(ctx, videoID)
 	if err != nil {
 		return nil, nil, messaging.Retryable(err)
@@ -94,7 +94,7 @@ func (h *ExtractFramesHandler) load(ctx context.Context, videoID uuid.UUID) (*do
 		return nil, nil, messaging.NonRetryable(domainvideo.ErrVideoNotFound)
 	}
 
-	job, err := h.scanJobRepo.GetByVideoID(ctx, video.ID)
+	job, err := h.jobRepo.GetByVideoID(ctx, video.ID)
 	if err != nil {
 		return nil, nil, messaging.Retryable(err)
 	}
@@ -104,17 +104,20 @@ func (h *ExtractFramesHandler) load(ctx context.Context, videoID uuid.UUID) (*do
 	return video, job, nil
 }
 
-func (h *ExtractFramesHandler) markExtracting(ctx context.Context, video *domainvideo.Video, job *domainscanjob.ScanJob) error {
-	if err := video.MarkExtracting(); err != nil {
+func (h *ExtractFramesHandler) markExtracting(ctx context.Context, video *domainvideo.Video, job *domainjob.Job) error {
+	job.MarkExtracting()
+	if err := video.MarkExtracting(job.ID, job.Status); err != nil {
 		return messaging.NonRetryable(err)
 	}
-	job.MarkExtracting()
 
 	err := h.videoRepo.WithTransaction(ctx, func(txCtx context.Context) error {
 		if err := h.videoRepo.Update(txCtx, video); err != nil {
 			return err
 		}
-		return h.scanJobRepo.Update(txCtx, job)
+		if err := h.jobRepo.Update(txCtx, job); err != nil {
+			return err
+		}
+		return h.outbox.StoreEvents(txCtx, video.PullEvents())
 	})
 	if err != nil {
 		return messaging.Retryable(err)
@@ -125,7 +128,7 @@ func (h *ExtractFramesHandler) markExtracting(ctx context.Context, video *domain
 func (h *ExtractFramesHandler) extractAndStore(
 	ctx context.Context,
 	video *domainvideo.Video,
-	job *domainscanjob.ScanJob,
+	job *domainjob.Job,
 ) ([]domainvideo.ExtractedFramePayload, error) {
 	tmp, err := os.CreateTemp("", "video-extract-*")
 	if err != nil {
@@ -157,7 +160,7 @@ func (h *ExtractFramesHandler) extractAndStore(
 		MaxIntervalSeconds: job.MaxIntervalSeconds,
 	})
 	if err != nil {
-		return nil, err
+		return nil, messaging.NonRetryable(err)
 	}
 
 	payloads := make([]domainvideo.ExtractedFramePayload, 0, len(extracted))
@@ -208,19 +211,19 @@ func (h *ExtractFramesHandler) storeThumbnail(ctx context.Context, video *domain
 func (h *ExtractFramesHandler) markReady(
 	ctx context.Context,
 	video *domainvideo.Video,
-	job *domainscanjob.ScanJob,
+	job *domainjob.Job,
 	frames []domainvideo.ExtractedFramePayload,
 ) error {
-	if err := video.MarkFramesReady(job.ID, frames); err != nil {
+	job.MarkFramesReady()
+	if err := video.MarkFramesReady(job.ID, job.Status, frames); err != nil {
 		return err
 	}
-	job.MarkFramesReady()
 
 	return h.videoRepo.WithTransaction(ctx, func(txCtx context.Context) error {
 		if err := h.videoRepo.Update(txCtx, video); err != nil {
 			return err
 		}
-		if err := h.scanJobRepo.Update(txCtx, job); err != nil {
+		if err := h.jobRepo.Update(txCtx, job); err != nil {
 			return err
 		}
 		return h.outbox.StoreEvents(txCtx, video.PullEvents())
@@ -230,19 +233,19 @@ func (h *ExtractFramesHandler) markReady(
 func (h *ExtractFramesHandler) markFailed(
 	ctx context.Context,
 	video *domainvideo.Video,
-	job *domainscanjob.ScanJob,
+	job *domainjob.Job,
 	reason string,
 ) error {
-	if err := video.MarkExtractionFailed(job.ID, reason); err != nil {
+	job.MarkFailed(reason)
+	if err := video.MarkExtractionFailed(job.ID, job.Status, reason); err != nil {
 		return err
 	}
-	job.MarkFailed(reason)
 
 	return h.videoRepo.WithTransaction(ctx, func(txCtx context.Context) error {
 		if err := h.videoRepo.Update(txCtx, video); err != nil {
 			return err
 		}
-		if err := h.scanJobRepo.Update(txCtx, job); err != nil {
+		if err := h.jobRepo.Update(txCtx, job); err != nil {
 			return err
 		}
 		return h.outbox.StoreEvents(txCtx, video.PullEvents())

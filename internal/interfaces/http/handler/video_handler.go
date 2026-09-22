@@ -89,7 +89,7 @@ func (h *VideoHandler) List(c fiber.Ctx) error {
 	if sortBy == "" {
 		listQuery.SortBy = "created_at"
 	}
-	if orderBy == "" {
+	if orderBy != paginate.OrderByAsc && orderBy != paginate.OrderByDesc {
 		listQuery.OrderBy = paginate.OrderByDesc
 	}
 

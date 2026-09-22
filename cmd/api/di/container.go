@@ -60,7 +60,7 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 
 	videoWriteRepo := write.NewVideoWriteRepository(db)
 	videoReadRepo := read.NewVideoReadRepository(db)
-	scanJobWriteRepo := write.NewScanJobWriteRepository(db)
+	jobWriteRepo := write.NewJobWriteRepository(db)
 
 	requestUploadURLHandler := videocommand.NewRequestUploadURLHandler(
 		videoWriteRepo,
@@ -68,7 +68,7 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 		minioStorage,
 		env.UploadURLTTL,
 	)
-	confirmUploadHandler := videocommand.NewConfirmUploadHandler(videoWriteRepo, scanJobWriteRepo, outboxRepo, env.VideoMaxSizeBytes)
+	confirmUploadHandler := videocommand.NewConfirmUploadHandler(videoWriteRepo, jobWriteRepo, outboxRepo, env.VideoMaxSizeBytes)
 	requestIngestHandler := videocommand.NewRequestIngestHandler(videoWriteRepo, outboxRepo)
 	getVideoByIDHandler := queryvideo.NewGetVideoByIDHandler(videoReadRepo, minioStorage)
 	listVideosHandler := queryvideo.NewListVideosHandler(videoReadRepo, minioStorage)

@@ -25,8 +25,21 @@ Requires authentication.
 | `user.created` | User created (Clerk webhook / signup) |
 | `user.updated` | User updated |
 | `user.deleted` | User deleted |
+| `video.created` | Video created (`pending_upload`) |
+| `video.uploaded` | Upload confirmed (`extraction_queued`) |
+| `job.updated` | Job moved to `extracting_frames`, `frames_ready`, or `failed` |
 
-Video realtime types (`video.created`, `video.updated`) are reserved. Handlers are registered on the worker but **do not publish to Centrifugo yet** — the frontend must poll `GET /api/videos/:id`.
+Video/job events are published only to the owner (`users:<userId>`). Webhook-ingested videos without a user are not pushed.
+
+```json
+{ "type": "video.created", "videoId": "...", "originalFilename": "demo.mp4", "status": "pending_upload", "occurredAt": "..." }
+{ "type": "video.uploaded", "videoId": "...", "status": "extraction_queued", "occurredAt": "..." }
+{ "type": "job.updated", "id": "...", "videoId": "...", "status": "extracting_frames", "videoStatus": "extracting", "frameCount": 0, "occurredAt": "..." }
+{ "type": "job.updated", "id": "...", "videoId": "...", "status": "frames_ready", "videoStatus": "frames_ready", "frameCount": 12, "occurredAt": "..." }
+{ "type": "job.updated", "id": "...", "videoId": "...", "status": "failed", "videoStatus": "extraction_failed", "failureReason": "unreadable video", "occurredAt": "..." }
+```
+
+Use `occurredAt` to ignore a stale `job.updated` if events arrive out of order.
 
 ## Code map
 
@@ -37,4 +50,4 @@ Video realtime types (`video.created`, `video.updated`) are reserved. Handlers a
 | Helpers | `internal/application/realtime/` |
 | Adapter | `internal/infrastructure/centrifugo/` |
 | Event publish | `internal/application/event/user/publish_realtime.go` |
-| Event publish (video, no-op) | `internal/application/event/video/publish_realtime.go` |
+| Event publish (video / job) | `internal/application/event/video/publish_realtime.go` |

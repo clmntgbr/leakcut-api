@@ -3,8 +3,8 @@ package video
 import (
 	"context"
 
+	domainjob "go-api/internal/domain/job"
 	"go-api/internal/domain/port"
-	domainscanjob "go-api/internal/domain/scanjob"
 	domainvideo "go-api/internal/domain/video"
 )
 
@@ -15,23 +15,23 @@ type ConfirmUploadCommand struct {
 }
 
 type ConfirmUploadHandler struct {
-	videoRepo   domainvideo.VideoWriteRepository
-	scanJobRepo domainscanjob.ScanJobWriteRepository
-	outbox      port.OutboxRepository
-	maxSize     int64
+	videoRepo domainvideo.VideoWriteRepository
+	jobRepo   domainjob.JobWriteRepository
+	outbox    port.OutboxRepository
+	maxSize   int64
 }
 
 func NewConfirmUploadHandler(
 	videoRepo domainvideo.VideoWriteRepository,
-	scanJobRepo domainscanjob.ScanJobWriteRepository,
+	jobRepo domainjob.JobWriteRepository,
 	outbox port.OutboxRepository,
 	maxSize int64,
 ) *ConfirmUploadHandler {
 	return &ConfirmUploadHandler{
-		videoRepo:   videoRepo,
-		scanJobRepo: scanJobRepo,
-		outbox:      outbox,
-		maxSize:     maxSize,
+		videoRepo: videoRepo,
+		jobRepo:   jobRepo,
+		outbox:    outbox,
+		maxSize:   maxSize,
 	}
 }
 
@@ -53,12 +53,12 @@ func (h *ConfirmUploadHandler) Handle(ctx context.Context, cmd ConfirmUploadComm
 			return err
 		}
 
-		existingJob, err := h.scanJobRepo.GetByVideoID(txCtx, video.ID)
+		existingJob, err := h.jobRepo.GetByVideoID(txCtx, video.ID)
 		if err != nil {
 			return err
 		}
 		if existingJob == nil {
-			if err := h.scanJobRepo.Save(txCtx, domainscanjob.NewScanJob(video.ID)); err != nil {
+			if err := h.jobRepo.Save(txCtx, domainjob.NewJob(video.ID)); err != nil {
 				return err
 			}
 		}

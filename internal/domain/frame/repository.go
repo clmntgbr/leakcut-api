@@ -8,5 +8,5 @@ import (
 
 type FrameWriteRepository interface {
 	UpsertAll(ctx context.Context, frames []*Frame) error
-	CountByScanJobID(ctx context.Context, scanJobID uuid.UUID) (int, error)
+	CountByJobID(ctx context.Context, jobID uuid.UUID) (int, error)
 }

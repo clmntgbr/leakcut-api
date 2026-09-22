@@ -40,7 +40,7 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 	outboxRepo := outbox.NewRepository(db)
 	dedupRepo := processed.NewRepository(db)
 	videoWriteRepo := write.NewVideoWriteRepository(db)
-	scanJobWriteRepo := write.NewScanJobWriteRepository(db)
+	jobWriteRepo := write.NewJobWriteRepository(db)
 	frameWriteRepo := write.NewFrameWriteRepository(db)
 
 	minioStorage, err := storage.NewMinIOStorage(env)
@@ -50,7 +50,7 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 
 	extractHandler := videocommand.NewExtractFramesHandler(
 		videoWriteRepo,
-		scanJobWriteRepo,
+		jobWriteRepo,
 		frameWriteRepo,
 		outboxRepo,
 		minioStorage,

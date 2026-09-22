@@ -21,11 +21,10 @@ type videoViewRow struct {
 	SizeBytes        int64
 	ContentType      string
 	Status           string
-	Source           string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
-	ScanJobID        *uuid.UUID
-	ScanJobStatus    string
+	JobID            *uuid.UUID
+	JobStatus        string
 	FrameCount       int
 	FailureReason    string
 }
@@ -52,15 +51,14 @@ func (r *videoReadRepository) FindByID(ctx context.Context, id, userID uuid.UUID
 			videos.size_bytes,
 			videos.content_type,
 			videos.status,
-			videos.source,
 			videos.created_at,
 			videos.updated_at,
-			scan_jobs.id AS scan_job_id,
-			scan_jobs.status AS scan_job_status,
-			scan_jobs.failure_reason,
-			COALESCE((SELECT COUNT(*) FROM frames WHERE frames.scan_job_id = scan_jobs.id), 0) AS frame_count
+			jobs.id AS job_id,
+			jobs.status AS job_status,
+			jobs.failure_reason,
+			COALESCE((SELECT COUNT(*) FROM frames WHERE frames.job_id = jobs.id), 0) AS frame_count
 		`).
-		Joins("LEFT JOIN scan_jobs ON scan_jobs.video_id = videos.id").
+		Joins("LEFT JOIN jobs ON jobs.video_id = videos.id").
 		Where("videos.id = ? AND videos.user_id = ?", id, userID).
 		Take(&row).Error
 	if err != nil {
@@ -78,11 +76,10 @@ func (r *videoReadRepository) FindByID(ctx context.Context, id, userID uuid.UUID
 		SizeBytes:        row.SizeBytes,
 		ContentType:      row.ContentType,
 		Status:           row.Status,
-		Source:           row.Source,
 		CreatedAt:        row.CreatedAt,
 		UpdatedAt:        row.UpdatedAt,
-		ScanJobID:        row.ScanJobID,
-		ScanJobStatus:    row.ScanJobStatus,
+		JobID:            row.JobID,
+		JobStatus:        row.JobStatus,
 		FrameCount:       row.FrameCount,
 		FailureReason:    row.FailureReason,
 	}, nil

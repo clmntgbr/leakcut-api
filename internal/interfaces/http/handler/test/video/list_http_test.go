@@ -73,6 +73,72 @@ func TestVideoHandler_List_Success(t *testing.T) {
 	}
 }
 
+func TestVideoHandler_List_Success_QueryParams(t *testing.T) {
+	list := &mockListVideosHandler{
+		views: []domainvideo.VideoListView{sampleVideoListView()},
+		total: 21,
+	}
+	h := newVideoHandler(nil, nil, list)
+
+	app := testutil.NewTestApp()
+	app.Get("/videos", testutil.WithUserWithoutProject(testutil.TestUserID), h.List)
+
+	req, err := testutil.JSONRequest(http.MethodGet, "/videos?page=2&limit=10&sortBy=status&orderBy=asc&search=demo", nil)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("perform request: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want %d", resp.StatusCode, http.StatusOK)
+	}
+	if list.query.Query.Page != 2 {
+		t.Fatalf("page: got %d", list.query.Query.Page)
+	}
+	if list.query.Query.Limit != 10 {
+		t.Fatalf("limit: got %d", list.query.Query.Limit)
+	}
+	if list.query.Query.SortBy != "status" {
+		t.Fatalf("sortBy: got %q", list.query.Query.SortBy)
+	}
+	if list.query.Query.OrderBy != paginate.OrderByAsc {
+		t.Fatalf("orderBy: got %q", list.query.Query.OrderBy)
+	}
+	if list.query.Query.Search != "demo" {
+		t.Fatalf("search: got %q", list.query.Query.Search)
+	}
+}
+
+func TestVideoHandler_List_Success_InvalidOrderByDefaultsDesc(t *testing.T) {
+	list := &mockListVideosHandler{}
+	h := newVideoHandler(nil, nil, list)
+
+	app := testutil.NewTestApp()
+	app.Get("/videos", testutil.WithUserWithoutProject(testutil.TestUserID), h.List)
+
+	req, err := testutil.JSONRequest(http.MethodGet, "/videos?orderBy=bogus&limit=9999", nil)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("perform request: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want %d", resp.StatusCode, http.StatusOK)
+	}
+	if list.query.Query.OrderBy != paginate.OrderByDesc {
+		t.Fatalf("orderBy: got %q", list.query.Query.OrderBy)
+	}
+	if list.query.Query.Limit != paginate.MaxLimit {
+		t.Fatalf("limit: got %d", list.query.Query.Limit)
+	}
+}
+
 func TestVideoHandler_List_Success_Empty(t *testing.T) {
 	list := &mockListVideosHandler{views: nil, total: 0}
 	h := newVideoHandler(nil, nil, list)

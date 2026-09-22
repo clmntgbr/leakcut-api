@@ -30,14 +30,14 @@ func (r *frameWriteRepository) UpsertAll(ctx context.Context, frames []*domainfr
 
 	return DBWithContext(ctx, r.db).
 		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "scan_job_id"}, {Name: "index"}},
+			Columns:   []clause.Column{{Name: "job_id"}, {Name: "index"}},
 			DoUpdates: clause.AssignmentColumns([]string{"timestamp_ms", "storage_key", "selection_reason", "diff_score"}),
 		}).
 		Create(&rows).Error
 }
 
-func (r *frameWriteRepository) CountByScanJobID(ctx context.Context, scanJobID uuid.UUID) (int, error) {
+func (r *frameWriteRepository) CountByJobID(ctx context.Context, jobID uuid.UUID) (int, error) {
 	var count int64
-	err := DBWithContext(ctx, r.db).Model(&FrameModel{}).Where("scan_job_id = ?", scanJobID).Count(&count).Error
+	err := DBWithContext(ctx, r.db).Model(&FrameModel{}).Where("job_id = ?", jobID).Count(&count).Error
 	return int(count), err
 }

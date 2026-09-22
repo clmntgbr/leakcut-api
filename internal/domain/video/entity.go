@@ -18,7 +18,6 @@ type Video struct {
 	SizeBytes        int64
 	ContentType      string
 	Status           string
-	Source           string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 
@@ -45,7 +44,6 @@ func NewPresignedVideo(userID uuid.UUID, filename, contentType string, sizeBytes
 		SizeBytes:        sizeBytes,
 		ContentType:      ContentTypeFromFilename(filename, contentType),
 		Status:           StatusPendingUpload,
-		Source:           SourcePresignedUpload,
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
@@ -71,7 +69,6 @@ func NewWebhookVideo(filename, contentType, remoteURL string, sizeBytes int64) (
 		SizeBytes:        sizeBytes,
 		ContentType:      ContentTypeFromFilename(filename, contentType),
 		Status:           StatusPendingUpload,
-		Source:           SourceWebhook,
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
@@ -100,12 +97,19 @@ func (v *Video) recordCreated() {
 	v.recordEvent(VideoCreated{
 		ID:         uuid.New().String(),
 		VideoID:    v.ID.String(),
+		UserID:     v.ownerUserID(),
 		Filename:   v.OriginalFilename,
 		StorageKey: v.StorageKey,
-		Source:     v.Source,
 		Status:     v.Status,
 		Timestamp:  v.CreatedAt,
 	})
+}
+
+func (v *Video) ownerUserID() string {
+	if v.UserID == nil {
+		return ""
+	}
+	return v.UserID.String()
 }
 
 func (v *Video) MarkUploaded(contentType string, sizeBytes int64) error {
@@ -118,17 +122,18 @@ func (v *Video) MarkUploaded(contentType string, sizeBytes int64) error {
 		if sizeBytes > 0 {
 			v.SizeBytes = sizeBytes
 		}
-		v.Status = StatusUploaded
+		v.Status = StatusExtractionQueued
 		v.UpdatedAt = now
 		v.recordEvent(VideoUploaded{
 			ID:          uuid.New().String(),
 			VideoID:     v.ID.String(),
+			UserID:      v.ownerUserID(),
 			StorageKey:  v.StorageKey,
 			ContentType: v.ContentType,
 			SizeBytes:   v.SizeBytes,
+			Status:      v.Status,
 			Timestamp:   now,
 		})
-		v.Status = StatusExtractionQueued
 		return nil
 	case StatusUploaded, StatusExtractionQueued, StatusExtracting, StatusFramesReady:
 		if contentType != "" {
@@ -157,11 +162,21 @@ func (v *Video) MarkExtractionQueued() error {
 	}
 }
 
-func (v *Video) MarkExtracting() error {
+func (v *Video) MarkExtracting(jobID uuid.UUID, jobStatus string) error {
 	switch v.Status {
 	case StatusUploaded, StatusExtractionQueued, StatusExtractionFailed:
+		now := time.Now().UTC()
 		v.Status = StatusExtracting
-		v.UpdatedAt = time.Now().UTC()
+		v.UpdatedAt = now
+		v.recordEvent(VideoExtracting{
+			ID:        uuid.New().String(),
+			VideoID:   v.ID.String(),
+			UserID:    v.ownerUserID(),
+			JobID:     jobID.String(),
+			Status:    v.Status,
+			JobStatus: jobStatus,
+			Timestamp: now,
+		})
 		return nil
 	case StatusExtracting:
 		return nil
@@ -170,7 +185,7 @@ func (v *Video) MarkExtracting() error {
 	}
 }
 
-func (v *Video) MarkFramesReady(scanJobID uuid.UUID, frames []ExtractedFramePayload) error {
+func (v *Video) MarkFramesReady(jobID uuid.UUID, jobStatus string, frames []ExtractedFramePayload) error {
 	if v.Status != StatusExtracting && v.Status != StatusExtractionQueued && v.Status != StatusUploaded {
 		if v.Status == StatusFramesReady {
 			return nil
@@ -184,7 +199,10 @@ func (v *Video) MarkFramesReady(scanJobID uuid.UUID, frames []ExtractedFramePayl
 	v.recordEvent(VideoFramesExtracted{
 		ID:         uuid.New().String(),
 		VideoID:    v.ID.String(),
-		ScanJobID:  scanJobID.String(),
+		UserID:     v.ownerUserID(),
+		JobID:      jobID.String(),
+		Status:     v.Status,
+		JobStatus:  jobStatus,
 		FrameCount: len(frames),
 		Frames:     frames,
 		Timestamp:  now,
@@ -192,7 +210,7 @@ func (v *Video) MarkFramesReady(scanJobID uuid.UUID, frames []ExtractedFramePayl
 	return nil
 }
 
-func (v *Video) MarkExtractionFailed(scanJobID uuid.UUID, reason string) error {
+func (v *Video) MarkExtractionFailed(jobID uuid.UUID, jobStatus, reason string) error {
 	switch v.Status {
 	case StatusExtracting, StatusExtractionQueued, StatusUploaded:
 	case StatusExtractionFailed:
@@ -207,7 +225,10 @@ func (v *Video) MarkExtractionFailed(scanJobID uuid.UUID, reason string) error {
 	v.recordEvent(VideoFrameExtractionFailed{
 		ID:        uuid.New().String(),
 		VideoID:   v.ID.String(),
-		ScanJobID: scanJobID.String(),
+		UserID:    v.ownerUserID(),
+		JobID:     jobID.String(),
+		Status:    v.Status,
+		JobStatus: jobStatus,
 		Reason:    reason,
 		Timestamp: now,
 	})

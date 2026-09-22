@@ -83,7 +83,7 @@ func sampleUploadResult() *cmdvideo.RequestUploadURLResult {
 }
 
 func sampleVideoView() *domainvideo.VideoView {
-	scanJobID := testutil.TestScanJobID
+	jobID := testutil.TestJobID
 	return &domainvideo.VideoView{
 		ID:               testutil.TestVideoID,
 		OriginalFilename: "demo.mp4",
@@ -93,11 +93,10 @@ func sampleVideoView() *domainvideo.VideoView {
 		SizeBytes:        1024,
 		ContentType:      "video/mp4",
 		Status:           domainvideo.StatusPendingUpload,
-		Source:           domainvideo.SourcePresignedUpload,
 		CreatedAt:        time.Date(2026, 9, 22, 11, 0, 0, 0, time.UTC),
 		UpdatedAt:        time.Date(2026, 9, 22, 11, 0, 0, 0, time.UTC),
-		ScanJobID:        &scanJobID,
-		ScanJobStatus:    "pending",
+		JobID:            &jobID,
+		JobStatus:        "pending",
 		FrameCount:       0,
 	}
 }

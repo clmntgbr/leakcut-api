@@ -207,6 +207,12 @@ func TestVideoHandler_GetByID_Success(t *testing.T) {
 	if out.ThumbnailURL == nil || *out.ThumbnailURL == "" {
 		t.Fatal("expected thumbnail url")
 	}
+	if out.JobID == nil || *out.JobID != testutil.TestJobID.String() {
+		t.Fatalf("job id: got %v", out.JobID)
+	}
+	if out.JobStatus == nil || *out.JobStatus != "pending" {
+		t.Fatalf("job status: got %v", out.JobStatus)
+	}
 }
 
 func TestVideoHandler_GetByID_Success_NoThumbnail(t *testing.T) {

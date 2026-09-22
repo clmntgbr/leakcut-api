@@ -2,7 +2,7 @@ package video
 
 import (
 	"context"
-	"errors"
+	"fmt"
 
 	"go-api/internal/domain/paginate"
 	"go-api/internal/domain/port"
@@ -28,7 +28,7 @@ func NewListVideosHandler(readRepo domainvideo.VideoReadRepository, storage port
 func (h *ListVideosHandler) Handle(ctx context.Context, q ListVideosQuery) ([]domainvideo.VideoListView, int64, error) {
 	views, total, err := h.readRepo.List(ctx, q.UserID, q.Query)
 	if err != nil {
-		return nil, 0, errors.New("failed to list videos")
+		return nil, 0, fmt.Errorf("failed to list videos: %w", err)
 	}
 
 	for i := range views {

@@ -8,7 +8,7 @@ import (
 
 type FrameModel struct {
 	ID              uuid.UUID `gorm:"column:id;primaryKey"`
-	ScanJobID       uuid.UUID `gorm:"column:scan_job_id"`
+	JobID           uuid.UUID `gorm:"column:job_id"`
 	Index           int       `gorm:"column:index"`
 	TimestampMs     int64     `gorm:"column:timestamp_ms"`
 	StorageKey      string    `gorm:"column:storage_key"`
@@ -23,7 +23,7 @@ func (FrameModel) TableName() string {
 func frameModelFromDomain(f *domainframe.Frame) *FrameModel {
 	return &FrameModel{
 		ID:              f.ID,
-		ScanJobID:       f.ScanJobID,
+		JobID:           f.JobID,
 		Index:           f.Index,
 		TimestampMs:     f.TimestampMs,
 		StorageKey:      f.StorageKey,

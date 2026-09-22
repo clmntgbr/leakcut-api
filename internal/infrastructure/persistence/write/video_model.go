@@ -17,7 +17,6 @@ type VideoModel struct {
 	SizeBytes        int64      `gorm:"column:size_bytes"`
 	ContentType      string     `gorm:"column:content_type"`
 	Status           string     `gorm:"column:status"`
-	Source           string     `gorm:"column:source"`
 	CreatedAt        time.Time  `gorm:"column:created_at"`
 	UpdatedAt        time.Time  `gorm:"column:updated_at"`
 }
@@ -36,7 +35,6 @@ func videoModelFromDomain(v *domainvideo.Video) *VideoModel {
 		SizeBytes:        v.SizeBytes,
 		ContentType:      v.ContentType,
 		Status:           v.Status,
-		Source:           v.Source,
 		CreatedAt:        v.CreatedAt,
 		UpdatedAt:        v.UpdatedAt,
 	}
@@ -52,7 +50,6 @@ func videoDomainFromModel(m *VideoModel) *domainvideo.Video {
 		SizeBytes:        m.SizeBytes,
 		ContentType:      m.ContentType,
 		Status:           m.Status,
-		Source:           m.Source,
 		CreatedAt:        m.CreatedAt,
 		UpdatedAt:        m.UpdatedAt,
 	}

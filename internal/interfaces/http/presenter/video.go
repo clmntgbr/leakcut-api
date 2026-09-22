@@ -38,9 +38,8 @@ type VideoDetailResponse struct {
 	SizeBytes        int64     `json:"sizeBytes"`
 	ContentType      *string   `json:"contentType"`
 	Status           string    `json:"status"`
-	Source           string    `json:"source"`
-	ScanJobID        *string   `json:"scanJobId"`
-	ScanJobStatus    *string   `json:"scanJobStatus"`
+	JobID            *string   `json:"jobId"`
+	JobStatus        *string   `json:"jobStatus"`
 	FrameCount       int       `json:"frameCount"`
 	FailureReason    *string   `json:"failureReason"`
 	CreatedAt        time.Time `json:"createdAt"`
@@ -79,9 +78,8 @@ func NewVideoDetailResponseFromView(view domainvideo.VideoView) VideoDetailRespo
 		SizeBytes:        view.SizeBytes,
 		ContentType:      optionalNonEmptyString(view.ContentType),
 		Status:           view.Status,
-		Source:           view.Source,
-		ScanJobID:        optionalUUIDString(view.ScanJobID),
-		ScanJobStatus:    optionalNonEmptyString(view.ScanJobStatus),
+		JobID:            optionalUUIDString(view.JobID),
+		JobStatus:        optionalNonEmptyString(view.JobStatus),
 		FrameCount:       view.FrameCount,
 		FailureReason:    optionalNonEmptyString(view.FailureReason),
 		CreatedAt:        view.CreatedAt,

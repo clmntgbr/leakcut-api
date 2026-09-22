@@ -33,11 +33,10 @@ type VideoView struct {
 	SizeBytes        int64
 	ContentType      string
 	Status           string
-	Source           string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
-	ScanJobID        *uuid.UUID
-	ScanJobStatus    string
+	JobID            *uuid.UUID
+	JobStatus        string
 	FrameCount       int
 	FailureReason    string
 }

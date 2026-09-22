@@ -3,12 +3,12 @@ package write
 import (
 	"time"
 
-	domainscanjob "go-api/internal/domain/scanjob"
+	domainjob "go-api/internal/domain/job"
 
 	"github.com/google/uuid"
 )
 
-type ScanJobModel struct {
+type JobModel struct {
 	ID                 uuid.UUID  `gorm:"column:id;primaryKey"`
 	VideoID            uuid.UUID  `gorm:"column:video_id"`
 	Status             string     `gorm:"column:status"`
@@ -20,12 +20,12 @@ type ScanJobModel struct {
 	CompletedAt        *time.Time `gorm:"column:completed_at"`
 }
 
-func (ScanJobModel) TableName() string {
-	return "scan_jobs"
+func (JobModel) TableName() string {
+	return "jobs"
 }
 
-func scanJobModelFromDomain(j *domainscanjob.ScanJob) *ScanJobModel {
-	return &ScanJobModel{
+func jobModelFromDomain(j *domainjob.Job) *JobModel {
+	return &JobModel{
 		ID:                 j.ID,
 		VideoID:            j.VideoID,
 		Status:             j.Status,
@@ -38,8 +38,8 @@ func scanJobModelFromDomain(j *domainscanjob.ScanJob) *ScanJobModel {
 	}
 }
 
-func scanJobDomainFromModel(m *ScanJobModel) *domainscanjob.ScanJob {
-	return &domainscanjob.ScanJob{
+func jobDomainFromModel(m *JobModel) *domainjob.Job {
+	return &domainjob.Job{
 		ID:                 m.ID,
 		VideoID:            m.VideoID,
 		Status:             m.Status,
