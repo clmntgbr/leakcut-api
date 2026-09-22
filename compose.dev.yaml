@@ -66,6 +66,30 @@ services:
       - api
     restart: unless-stopped
 
+  frame:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: frame
+    command: ["go", "run", "./cmd/frame"]
+    volumes:
+      - .:/app
+      - go-modules:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    env_file:
+      - .env
+    depends_on:
+      database:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    networks:
+      - api
+    restart: unless-stopped
+
   database:
     container_name: datastore
     image: postgres:${POSTGRES_VERSION:-16}-alpine
@@ -104,6 +128,42 @@ services:
     networks:
       - api
     restart: unless-stopped
+
+  minio:
+    container_name: s3
+    image: minio/minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: devuser
+      MINIO_ROOT_PASSWORD: devpassword
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - api
+    restart: unless-stopped
+
+  mc:
+    container_name: mc
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set myminio http://minio:9000 devuser devpassword; do sleep 1; done;
+      mc mb myminio/${STORAGE_BUCKET:-media} --ignore-existing;
+      mc mb myminio/${STORAGE_THUMBNAIL_BUCKET:-thumbnails} --ignore-existing;
+      mc admin config set myminio notify_webhook:analyze endpoint='http://api:3000/webhooks/minio/object-created' auth_token='${MINIO_WEBHOOK_SECRET}';
+      mc admin service restart myminio --json;
+      sleep 5;
+      mc event remove myminio/${STORAGE_BUCKET:-media} --force || true;
+      mc event add myminio/${STORAGE_BUCKET:-media} arn:minio:sqs::analyze:webhook --event put --prefix videos/ --suffix original.mp4 -p;
+      "
+    networks:
+      - api
 
   centrifugo:
     container_name: centrifugo
@@ -147,6 +207,7 @@ services:
 volumes:
   go-modules:
   go-build-cache:
+  minio_data:
   database_data:
 
 networks:

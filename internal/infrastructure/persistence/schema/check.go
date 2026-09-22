@@ -14,6 +14,9 @@ import (
 func Models() []any {
 	return []any{
 		&write.UserModel{},
+		&write.VideoModel{},
+		&write.ScanJobModel{},
+		&write.FrameModel{},
 		&outbox.OutboxEvent{},
 		&processed.ProcessedEvent{},
 	}

@@ -186,7 +186,7 @@ One shape for every error response, on every endpoint including webhooks:
 
 - `message` is **mandatory** and is the only key clients can rely on. Never `{"error": …}`, never a bare string, never a nested `{"success": false, "data": {…}}`.
 - `errors` is optional and reserved for **field-level validation** failures; `validation.Struct` fills it. Do not use it to carry a single global error.
-- `code` is optional, for machine-readable business cases (example: `WRONG_ORGANIZATION`).
+- `code` is optional, for machine-readable business cases (example: `WRONG_CLIENT`).
 - **Never put an internal error string in the response.** `err.Error()` may expose driver, SQL, or provider details. Log it server-side and return a generic `message`. Sentinel errors whose text is a deliberate part of the contract may be surfaced, but only on `4xx`.
 
 ## Outbox
@@ -316,7 +316,7 @@ Cover at least:
 1. **Success** — happy path, assert status, response shape, and that the mock command/query was called with expected fields.
 2. **Unauthorized** or **MissingActiveProject** — depending on whether the handler requires `httpctx.GetUser()` and/or `GetActiveProjectID()`.
 3. **Invalid input** — malformed JSON, invalid UUID path params, DTO validation failures (`400` + field errors where applicable).
-4. **Handler error (business)** — not found, wrong project, quota exceeded, domain validation errors, special codes (example: `409` + `WRONG_ORGANIZATION` — legacy API code kept for client compatibility; test names use `WrongProject`).
+4. **Handler error (business)** — not found, wrong client, quota exceeded, domain validation errors, special codes (example: `409` + `WRONG_CLIENT` — test names use `WrongClient`).
 5. **Handler error (internal)** — unexpected errors from mocked handlers → `500`.
 
 Add focused tests for branches that are hard to reach via DTO validation only (reload failures, multipart edge cases, webhook `Locals` payloads).

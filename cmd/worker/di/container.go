@@ -2,25 +2,34 @@ package di
 
 import (
 	"log"
+	"time"
 
+	videocommand "go-api/internal/application/command/video"
 	"go-api/internal/application/event/dedup"
 	eventuser "go-api/internal/application/event/user"
+	eventvideo "go-api/internal/application/event/video"
 	"go-api/internal/application/registry"
 	domainuser "go-api/internal/domain/user"
+	domainvideo "go-api/internal/domain/video"
 	"go-api/internal/infrastructure/centrifugo"
 	"go-api/internal/infrastructure/config"
 	"go-api/internal/infrastructure/messaging/rabbitmq"
 	"go-api/internal/infrastructure/notification"
 	"go-api/internal/infrastructure/persistence/outbox"
 	"go-api/internal/infrastructure/persistence/processed"
+	"go-api/internal/infrastructure/persistence/write"
+	"go-api/internal/infrastructure/remote"
+	"go-api/internal/infrastructure/storage"
 
 	"gorm.io/gorm"
 )
 
 type Container struct {
-	Relay    *outbox.Relay
-	Consumer *rabbitmq.Consumer
-	Conn     *rabbitmq.Connection
+	Relay                 *outbox.Relay
+	Consumer              *rabbitmq.Consumer
+	Conn                  *rabbitmq.Connection
+	ExpireStaleUploads    *videocommand.ExpireStaleUploadsHandler
+	ExpireUploadsInterval time.Duration
 }
 
 func NewContainer(db *gorm.DB, env *config.Config) *Container {
@@ -44,6 +53,7 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 	notifier := notification.NewLogNotifier()
 	realtimePublisher := centrifugo.NewPublisher(env)
 	publishUserRealtime := eventuser.NewPublishRealtimeHandler(realtimePublisher)
+	publishVideoRealtime := eventvideo.NewPublishRealtimeHandler()
 	reg := registry.NewHandlerRegistry()
 
 	reg.Register(domainuser.EventTypeUserCreated, dedup.With(
@@ -82,11 +92,60 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 		publishUserRealtime.OnDeleted,
 	))
 
+	videoWriteRepo := write.NewVideoWriteRepository(db)
+	scanJobWriteRepo := write.NewScanJobWriteRepository(db)
+	minioStorage, err := storage.NewMinIOStorage(env)
+	if err != nil {
+		log.Fatalf("failed to create storage client: %v", err)
+	}
+
+	confirmUploadHandler := videocommand.NewConfirmUploadHandler(videoWriteRepo, scanJobWriteRepo, outboxRepo, env.VideoMaxSizeBytes)
+	ingestRemoteHandler := videocommand.NewIngestRemoteHandler(
+		videoWriteRepo,
+		remote.NewFetcher(env.VideoIngestAllowedHosts, env.Environment == "development"),
+		minioStorage,
+		confirmUploadHandler,
+		env.VideoMaxSizeBytes,
+	)
+
+	reg.Register(domainvideo.EventTypeVideoIngestRequested, dedup.With(
+		dedupRepo,
+		"ingest_remote_video",
+		eventvideo.NewIngestRemoteOnRequestedHandler(ingestRemoteHandler).Handle,
+	))
+	reg.Register(domainvideo.EventTypeVideoCreated, dedup.With(
+		dedupRepo,
+		"publish_video_created_realtime",
+		publishVideoRealtime.OnCreated,
+	))
+	reg.Register(domainvideo.EventTypeVideoUploaded, dedup.With(
+		dedupRepo,
+		"publish_video_uploaded_realtime",
+		publishVideoRealtime.OnUploaded,
+	))
+	reg.Register(domainvideo.EventTypeVideoFramesExtracted, dedup.With(
+		dedupRepo,
+		"publish_video_frames_extracted_realtime",
+		publishVideoRealtime.OnFramesExtracted,
+	))
+	reg.Register(domainvideo.EventTypeVideoFrameExtractionFailed, dedup.With(
+		dedupRepo,
+		"publish_video_extraction_failed_realtime",
+		publishVideoRealtime.OnExtractionFailed,
+	))
+	reg.Register(domainvideo.EventTypeVideoUploadExpired, dedup.With(
+		dedupRepo,
+		"publish_video_upload_expired_realtime",
+		publishVideoRealtime.OnUploadExpired,
+	))
+
 	consumer := rabbitmq.NewConsumer(conn, reg, env.WorkerConcurrency, env.WorkerMaxRetries)
 
 	return &Container{
-		Relay:    relay,
-		Consumer: consumer,
-		Conn:     conn,
+		Relay:                 relay,
+		Consumer:              consumer,
+		Conn:                  conn,
+		ExpireStaleUploads:    videocommand.NewExpireStaleUploadsHandler(videoWriteRepo, outboxRepo, env.UploadURLTTL),
+		ExpireUploadsInterval: env.ExpireUploadsInterval,
 	}
 }

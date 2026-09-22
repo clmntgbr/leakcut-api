@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"go-api/cmd/worker/di"
 	"go-api/internal/infrastructure/config"
@@ -27,8 +28,30 @@ func main() {
 	defer cancel()
 
 	go container.Relay.Start(ctx)
+	go expireStaleUploads(ctx, container)
 
 	if err := container.Consumer.Start(ctx); err != nil {
 		log.Fatalf("worker stopped with error: %v", err)
+	}
+}
+
+func expireStaleUploads(ctx context.Context, container *di.Container) {
+	interval := container.ExpireUploadsInterval
+	if interval <= 0 {
+		interval = time.Minute
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := container.ExpireStaleUploads.Handle(ctx); err != nil {
+				log.Printf("expire stale uploads failed: %v", err)
+			}
+		}
 	}
 }

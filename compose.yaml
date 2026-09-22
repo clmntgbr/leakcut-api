@@ -22,3 +22,14 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+
+  frame:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: frame
+    command: ["./frame"]
+    env_file:
+      - .env
+    restart: unless-stopped

@@ -1,0 +1,22 @@
+package port
+
+import "context"
+
+type FrameSelectionParams struct {
+	AnalysisFPS        float64
+	DiffThreshold      float64
+	MaxIntervalSeconds int
+}
+
+type ExtractedFrame struct {
+	Index           int
+	TimestampMs     int64
+	Data            []byte
+	SelectionReason string
+	DiffScore       float64
+}
+
+type FrameExtractor interface {
+	ExtractFrames(ctx context.Context, videoPath string, params FrameSelectionParams) ([]ExtractedFrame, error)
+	ExtractThumbnail(ctx context.Context, videoPath string) ([]byte, error)
+}

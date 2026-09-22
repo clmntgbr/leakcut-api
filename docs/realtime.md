@@ -26,6 +26,8 @@ Requires authentication.
 | `user.updated` | User updated |
 | `user.deleted` | User deleted |
 
+Video realtime types (`video.created`, `video.updated`) are reserved. Handlers are registered on the worker but **do not publish to Centrifugo yet** — the frontend must poll `GET /api/videos/:id`.
+
 ## Code map
 
 | Layer | Location |
@@ -35,3 +37,4 @@ Requires authentication.
 | Helpers | `internal/application/realtime/` |
 | Adapter | `internal/infrastructure/centrifugo/` |
 | Event publish | `internal/application/event/user/publish_realtime.go` |
+| Event publish (video, no-op) | `internal/application/event/video/publish_realtime.go` |

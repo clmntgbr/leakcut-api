@@ -5,7 +5,7 @@ FROM golang:1.25-alpine AS base
 
 WORKDIR /app
 
-RUN apk add --no-cache git
+RUN apk add --no-cache git ffmpeg
 
 COPY go.mod go.sum ./
 RUN go mod download
@@ -50,13 +50,19 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o cli \
     ./cmd/cli
 
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -a -installsuffix cgo \
+    -ldflags="-w -s" \
+    -o frame \
+    ./cmd/frame
+
 
 # ============================================
 # Production stage - Minimal runtime
 # ============================================
 FROM alpine:latest AS production
 
-RUN apk --no-cache add ca-certificates tzdata
+RUN apk --no-cache add ca-certificates tzdata ffmpeg
 
 RUN addgroup -g 1000 appuser && \
     adduser -D -u 1000 -G appuser appuser
@@ -66,6 +72,7 @@ WORKDIR /home/appuser
 COPY --from=builder --chown=appuser:appuser /app/api .
 COPY --from=builder --chown=appuser:appuser /app/worker .
 COPY --from=builder --chown=appuser:appuser /app/cli .
+COPY --from=builder --chown=appuser:appuser /app/frame .
 
 USER appuser
 

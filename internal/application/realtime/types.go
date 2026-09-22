@@ -5,7 +5,8 @@ const (
 	ActionUpdated = "updated"
 	ActionDeleted = "deleted"
 
-	EntityUser = "user"
+	EntityUser  = "user"
+	EntityVideo = "video"
 )
 
 func EventType(entity, action string) string {
