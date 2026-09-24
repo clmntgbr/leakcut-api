@@ -307,12 +307,18 @@ func (h *OCRFramesHandler) normalizePayloads(items []domainvideo.OCRFrameResultP
 		if err != nil {
 			continue
 		}
-		out = append(out, h.normalizeResult(frameID, item.Text, item.Confidence, item.Status))
+		out = append(out, h.normalizeResult(frameID, item.Text, item.Confidence, item.Status, item.Lines))
 	}
 	return out
 }
 
-func (h *OCRFramesHandler) normalizeResult(frameID uuid.UUID, text string, confidence float64, status string) *domainocr.Result {
+func (h *OCRFramesHandler) normalizeResult(
+	frameID uuid.UUID,
+	text string,
+	confidence float64,
+	status string,
+	lines []domainvideo.OCRLinePayload,
+) *domainocr.Result {
 	text = strings.TrimSpace(text)
 	if status == "" {
 		if text == "" {
@@ -324,18 +330,41 @@ func (h *OCRFramesHandler) normalizeResult(frameID uuid.UUID, text string, confi
 
 	switch status {
 	case domainocr.StatusFailed:
-		return domainocr.NewResult(frameID, "", confidence, domainocr.StatusFailed, "ocr engine failed")
+		return domainocr.NewResult(frameID, "", confidence, domainocr.StatusFailed, "ocr engine failed", nil)
 	case domainocr.StatusEmpty:
-		return domainocr.NewResult(frameID, "", 0, domainocr.StatusEmpty, "")
+		return domainocr.NewResult(frameID, "", 0, domainocr.StatusEmpty, "", nil)
 	default:
 		if text == "" {
-			return domainocr.NewResult(frameID, "", 0, domainocr.StatusEmpty, "")
+			return domainocr.NewResult(frameID, "", 0, domainocr.StatusEmpty, "", nil)
 		}
 		if h.minConfidence > 0 && confidence < h.minConfidence {
-			return domainocr.NewResult(frameID, "", confidence, domainocr.StatusFailed, "low_confidence")
+			return domainocr.NewResult(frameID, "", confidence, domainocr.StatusFailed, "low_confidence", nil)
 		}
-		return domainocr.NewResult(frameID, text, confidence, domainocr.StatusSuccess, "")
+		return domainocr.NewResult(frameID, text, confidence, domainocr.StatusSuccess, "", toOCRLines(lines))
 	}
+}
+
+func toOCRLines(items []domainvideo.OCRLinePayload) []domainocr.Line {
+	out := make([]domainocr.Line, 0, len(items))
+	for _, item := range items {
+		text := strings.TrimSpace(item.Text)
+		if text == "" {
+			continue
+		}
+		box := make([]domainocr.Point, 0, len(item.Box))
+		for _, point := range item.Box {
+			box = append(box, domainocr.Point{X: point.X, Y: point.Y})
+		}
+		if len(box) != 4 {
+			box = []domainocr.Point{}
+		}
+		out = append(out, domainocr.Line{
+			Text:       text,
+			Confidence: item.Confidence,
+			Box:        box,
+		})
+	}
+	return out
 }
 
 func frameIDs(frames []*domainframe.Frame) []uuid.UUID {

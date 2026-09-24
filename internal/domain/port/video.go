@@ -3,10 +3,10 @@ package port
 import "context"
 
 type FrameSelectionParams struct {
-	AnalysisFPS        float64
-	DiffThreshold      float64
-	MaxIntervalSeconds int
-	MaxWidthPx         int
+	AnalysisFPS            float64
+	PHashDistanceThreshold int
+	MaxIntervalSeconds     int
+	MaxWidthPx             int
 }
 
 type ExtractedFrame struct {
@@ -14,7 +14,7 @@ type ExtractedFrame struct {
 	TimestampMs     int64
 	Data            []byte
 	SelectionReason string
-	DiffScore       float64
+	PHashDistance   int
 }
 
 type FrameSink func(frame ExtractedFrame) error

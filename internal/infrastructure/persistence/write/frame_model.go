@@ -13,7 +13,7 @@ type FrameModel struct {
 	TimestampMs     int64     `gorm:"column:timestamp_ms"`
 	StorageKey      string    `gorm:"column:storage_key"`
 	SelectionReason string    `gorm:"column:selection_reason"`
-	DiffScore       float64   `gorm:"column:diff_score"`
+	PHashDistance   int       `gorm:"column:phash_distance"`
 }
 
 func (FrameModel) TableName() string {
@@ -28,7 +28,7 @@ func frameModelFromDomain(f *domainframe.Frame) *FrameModel {
 		TimestampMs:     f.TimestampMs,
 		StorageKey:      f.StorageKey,
 		SelectionReason: f.SelectionReason,
-		DiffScore:       f.DiffScore,
+		PHashDistance:   f.PHashDistance,
 	}
 }
 
@@ -40,6 +40,6 @@ func frameDomainFromModel(m *FrameModel) *domainframe.Frame {
 		TimestampMs:     m.TimestampMs,
 		StorageKey:      m.StorageKey,
 		SelectionReason: m.SelectionReason,
-		DiffScore:       m.DiffScore,
+		PHashDistance:   m.PHashDistance,
 	}
 }

@@ -6,14 +6,14 @@ Keep the pipeline cheap on long videos without dropping screens that might conta
 
 | Lever | Default | Effect |
 |-------|---------|--------|
-| `analysis_fps` | `2` | Decode rate for the scene-change pass |
-| `diff_threshold` | `0.13` | Higher → fewer `scene_change` keeps |
+| `analysis_fps` | `2` | Decode rate for the pHash pass |
+| `phash_distance_threshold` | `14` | Higher → fewer `scene_change` keeps (Hamming vs last kept) |
 | `max_interval_seconds` | `15` | Safety net on a static screen |
 | `FRAME_MAX_WIDTH_PX` | `1280` | ffmpeg scale at extract (OCR sees the same PNG) |
-| `--scale ocr=N` | `1` | Competing consumers on `video.ocr_frame_requested.v1` |
+| `--scale ocr=N` | `2` | Competing consumers on `video.ocr_frame_requested.v1` |
 | `OCR_CONCURRENCY` | `1` | RabbitMQ prefetch per OCR replica |
 
-A previous 5-minute clip at ~1.6 fps / 8% produced ~490 frames. The current defaults target fewer keeps. There is no pre-OCR “has text?” gate — false negatives would skip real leaks.
+A previous 5-minute clip at ~1.6 fps / 8% produced ~490 frames. Pixel luminance also missed same-dark-theme scene changes. pHash (default 14) targets ~40–60 keeps on a 5-minute clip. If volume is still high, raise the threshold (16, 18, 20); if a scene is missed, lower it (12, 10). There is no pre-OCR “has text?” gate — false negatives would skip real leaks.
 
 ## Workers
 
@@ -25,7 +25,7 @@ A previous 5-minute clip at ~1.6 fps / 8% produced ~490 frames. The current defa
 | `classify` | N | One message per video after OCR completes |
 
 ```bash
-docker compose -f compose.dev.yaml up --scale ocr=2 --scale frame=1
+docker compose -f compose.dev.yaml up --scale ocr=2 --scale frame=2 --scale classify=2
 ```
 
 ## Incremental OCR

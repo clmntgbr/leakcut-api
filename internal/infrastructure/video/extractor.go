@@ -17,6 +17,8 @@ import (
 	domainframe "go-api/internal/domain/frame"
 	domainjob "go-api/internal/domain/job"
 	"go-api/internal/domain/port"
+
+	"github.com/corona10/goimagehash"
 )
 
 var pngSignature = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
@@ -87,8 +89,8 @@ func (e *FrameExtractor) ExtractFrames(
 	if params.AnalysisFPS <= 0 {
 		params.AnalysisFPS = domainjob.DefaultAnalysisFPS
 	}
-	if params.DiffThreshold <= 0 {
-		params.DiffThreshold = domainjob.DefaultDiffThreshold
+	if params.PHashDistanceThreshold <= 0 {
+		params.PHashDistanceThreshold = domainjob.DefaultPHashDistanceThreshold
 	}
 	if params.MaxIntervalSeconds <= 0 {
 		params.MaxIntervalSeconds = domainjob.DefaultMaxIntervalSeconds
@@ -124,8 +126,7 @@ func (e *FrameExtractor) ExtractFrames(
 	maxIntervalMs := int64(params.MaxIntervalSeconds) * 1000
 	kept := 0
 	candidate := 0
-	var lastGray []uint8
-	var lastWidth, lastHeight int
+	var lastKeptHash *goimagehash.ImageHash
 	var lastKeptAt int64 = -1
 	readErr := error(nil)
 
@@ -141,19 +142,23 @@ func (e *FrameExtractor) ExtractFrames(
 
 		timestampMs := int64(math.Round(float64(candidate) * 1000 / params.AnalysisFPS))
 		candidate++
-		gray, width, height, err := loadGrayPNG(data)
+		hash, err := perceptionHashPNG(data)
 		if err != nil {
 			readErr = err
 			break
 		}
 
 		reason := ""
-		score := 0.0
-		if lastKeptAt < 0 {
+		distance := 0
+		if lastKeptHash == nil {
 			reason = domainframe.SelectionReasonFixedInterval
 		} else {
-			score = meanAbsDiff(lastGray, gray, lastWidth, lastHeight, width, height)
-			if score >= params.DiffThreshold {
+			distance, err = hash.Distance(lastKeptHash)
+			if err != nil {
+				readErr = err
+				break
+			}
+			if distance >= params.PHashDistanceThreshold {
 				reason = domainframe.SelectionReasonSceneChange
 			} else if timestampMs-lastKeptAt >= maxIntervalMs {
 				reason = domainframe.SelectionReasonFixedInterval
@@ -168,15 +173,14 @@ func (e *FrameExtractor) ExtractFrames(
 			TimestampMs:     timestampMs,
 			Data:            data,
 			SelectionReason: reason,
-			DiffScore:       score,
+			PHashDistance:   distance,
 		}); err != nil {
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
 			return err
 		}
 		kept++
-		lastGray = gray
-		lastWidth, lastHeight = width, height
+		lastKeptHash = hash
 		lastKeptAt = timestampMs
 	}
 
@@ -223,48 +227,14 @@ func readPNG(r io.Reader) ([]byte, error) {
 	}
 }
 
-func loadGrayPNG(raw []byte) ([]uint8, int, int, error) {
+func perceptionHashPNG(raw []byte) (*goimagehash.ImageHash, error) {
 	img, err := png.Decode(bytes.NewReader(raw))
 	if err != nil {
-		return nil, 0, 0, fmt.Errorf("decode frame: %w", err)
+		return nil, fmt.Errorf("decode frame: %w", err)
 	}
-
-	bounds := img.Bounds()
-	width, height := bounds.Dx(), bounds.Dy()
-	gray := make([]uint8, width*height)
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			r, g, b, _ := img.At(x, y).RGBA()
-			gray[(y-bounds.Min.Y)*width+(x-bounds.Min.X)] = uint8(((r*299 + g*587 + b*114) / 1000) >> 8)
-		}
+	hash, err := goimagehash.PerceptionHash(img)
+	if err != nil {
+		return nil, fmt.Errorf("phash: %w", err)
 	}
-	return gray, width, height, nil
-}
-
-func meanAbsDiff(a []uint8, b []uint8, aw, ah, bw, bh int) float64 {
-	if len(a) == 0 || len(b) == 0 || aw == 0 || ah == 0 || bw == 0 || bh == 0 {
-		return 1
-	}
-
-	width := aw
-	height := ah
-	if bw < width {
-		width = bw
-	}
-	if bh < height {
-		height = bh
-	}
-
-	var total float64
-	pixels := width * height
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			diff := int(a[y*aw+x]) - int(b[y*bw+x])
-			if diff < 0 {
-				diff = -diff
-			}
-			total += float64(diff)
-		}
-	}
-	return total / float64(pixels) / 255
+	return hash, nil
 }

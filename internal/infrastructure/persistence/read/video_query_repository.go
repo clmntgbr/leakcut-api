@@ -217,11 +217,12 @@ type frameDetailRow struct {
 	TimestampMs     int64      `gorm:"column:timestamp_ms"`
 	StorageKey      string     `gorm:"column:storage_key"`
 	SelectionReason string     `gorm:"column:selection_reason"`
-	DiffScore       float64    `gorm:"column:diff_score"`
+	PHashDistance   int        `gorm:"column:phash_distance"`
 	OCRText         string     `gorm:"column:ocr_text"`
 	OCRStatus       string     `gorm:"column:ocr_status"`
 	OCRConfidence   float64    `gorm:"column:ocr_confidence"`
 	OCRErrorReason  string     `gorm:"column:ocr_error_reason"`
+	OCRLines        string     `gorm:"column:ocr_lines"`
 	FindingID       *uuid.UUID `gorm:"column:finding_id"`
 	Confidential    bool       `gorm:"column:confidential"`
 	Probability     float64    `gorm:"column:probability"`
@@ -240,11 +241,12 @@ func (r *videoReadRepository) ListFramesByVideoID(ctx context.Context, id, userI
 			frames.timestamp_ms,
 			frames.storage_key,
 			frames.selection_reason,
-			frames.diff_score,
+			frames.phash_distance,
 			COALESCE(ocr_results.text, '') AS ocr_text,
 			COALESCE(ocr_results.status, '') AS ocr_status,
 			COALESCE(ocr_results.confidence, 0) AS ocr_confidence,
 			COALESCE(ocr_results.error_reason, '') AS ocr_error_reason,
+			COALESCE(ocr_results.lines::text, '[]') AS ocr_lines,
 			frame_findings.id AS finding_id,
 			COALESCE(frame_findings.confidential, FALSE) AS confidential,
 			COALESCE(frame_findings.probability, 0) AS probability,
@@ -271,15 +273,46 @@ func (r *videoReadRepository) ListFramesByVideoID(ctx context.Context, id, userI
 			TimestampMs:     row.TimestampMs,
 			StorageKey:      row.StorageKey,
 			SelectionReason: row.SelectionReason,
-			DiffScore:       row.DiffScore,
+			PHashDistance:   row.PHashDistance,
 			OCRText:         row.OCRText,
 			OCRStatus:       row.OCRStatus,
 			OCRConfidence:   row.OCRConfidence,
 			OCRErrorReason:  row.OCRErrorReason,
+			OCRLines:        ocrLinesFromRow(row.OCRLines),
 			Finding:         findingViewFromRow(row),
 		})
 	}
 	return out, nil
+}
+
+func ocrLinesFromRow(raw string) []domainvideo.OCRLineView {
+	out := make([]domainvideo.OCRLineView, 0)
+	if raw == "" {
+		return out
+	}
+	var lines []struct {
+		Text       string  `json:"text"`
+		Confidence float64 `json:"confidence"`
+		Box        []struct {
+			X int `json:"x"`
+			Y int `json:"y"`
+		} `json:"box"`
+	}
+	if err := json.Unmarshal([]byte(raw), &lines); err != nil {
+		return out
+	}
+	for _, line := range lines {
+		box := make([]domainvideo.OCRPointView, 0, len(line.Box))
+		for _, point := range line.Box {
+			box = append(box, domainvideo.OCRPointView{X: point.X, Y: point.Y})
+		}
+		out = append(out, domainvideo.OCRLineView{
+			Text:       line.Text,
+			Confidence: line.Confidence,
+			Box:        box,
+		})
+	}
+	return out
 }
 
 func findingViewFromRow(row frameDetailRow) *domainvideo.VideoFrameFindingView {

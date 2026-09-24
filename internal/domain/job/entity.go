@@ -26,37 +26,37 @@ const (
 )
 
 const (
-	DefaultAnalysisFPS        = 2.0
-	DefaultDiffThreshold      = 0.13
-	DefaultMaxIntervalSeconds = 15
-	DefaultFrameMaxWidthPx    = 1280
+	DefaultAnalysisFPS            = 2.0
+	DefaultPHashDistanceThreshold = 14
+	DefaultMaxIntervalSeconds     = 15
+	DefaultFrameMaxWidthPx        = 1280
 )
 
 type Job struct {
-	ID                 uuid.UUID
-	VideoID            uuid.UUID
-	Type               string
-	Status             string
-	FailureReason      string
-	AnalysisFPS        float64
-	DiffThreshold      float64
-	MaxIntervalSeconds int
-	ExpectedFrameCount int
-	OCRCompletedCount  int
-	CreatedAt          time.Time
-	CompletedAt        *time.Time
+	ID                     uuid.UUID
+	VideoID                uuid.UUID
+	Type                   string
+	Status                 string
+	FailureReason          string
+	AnalysisFPS            float64
+	PHashDistanceThreshold int
+	MaxIntervalSeconds     int
+	ExpectedFrameCount     int
+	OCRCompletedCount      int
+	CreatedAt              time.Time
+	CompletedAt            *time.Time
 }
 
 func NewExtractFramesJob(videoID uuid.UUID) *Job {
 	return &Job{
-		ID:                 uuid.New(),
-		VideoID:            videoID,
-		Type:               TypeExtractFrames,
-		Status:             StatusPending,
-		AnalysisFPS:        DefaultAnalysisFPS,
-		DiffThreshold:      DefaultDiffThreshold,
-		MaxIntervalSeconds: DefaultMaxIntervalSeconds,
-		CreatedAt:          time.Now().UTC(),
+		ID:                     uuid.New(),
+		VideoID:                videoID,
+		Type:                   TypeExtractFrames,
+		Status:                 StatusPending,
+		AnalysisFPS:            DefaultAnalysisFPS,
+		PHashDistanceThreshold: DefaultPHashDistanceThreshold,
+		MaxIntervalSeconds:     DefaultMaxIntervalSeconds,
+		CreatedAt:              time.Now().UTC(),
 	}
 }
 

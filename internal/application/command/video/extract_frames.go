@@ -165,10 +165,10 @@ func (h *ExtractFramesHandler) extractAndStore(
 
 	payloads := make([]domainvideo.ExtractedFramePayload, 0)
 	err = h.extractor.ExtractFrames(ctx, tmp.Name(), port.FrameSelectionParams{
-		AnalysisFPS:        job.AnalysisFPS,
-		DiffThreshold:      job.DiffThreshold,
-		MaxIntervalSeconds: job.MaxIntervalSeconds,
-		MaxWidthPx:         h.maxWidthPx,
+		AnalysisFPS:            job.AnalysisFPS,
+		PHashDistanceThreshold: job.PHashDistanceThreshold,
+		MaxIntervalSeconds:     job.MaxIntervalSeconds,
+		MaxWidthPx:             h.maxWidthPx,
 	}, func(item port.ExtractedFrame) error {
 		storageKey := domainvideo.NewFrameStorageKey(video.ID, item.Index)
 		if err := h.storage.Put(ctx, storageKey, bytes.NewReader(item.Data), int64(len(item.Data)), "image/png"); err != nil {
@@ -180,7 +180,7 @@ func (h *ExtractFramesHandler) extractAndStore(
 			item.TimestampMs,
 			storageKey,
 			item.SelectionReason,
-			item.DiffScore,
+			item.PHashDistance,
 		)
 		payload, err := h.persistFrameAndRequestOCR(ctx, video, frame)
 		if err != nil {
@@ -218,7 +218,7 @@ func (h *ExtractFramesHandler) persistFrameAndRequestOCR(
 			TimestampMs:     frame.TimestampMs,
 			StorageKey:      frame.StorageKey,
 			SelectionReason: frame.SelectionReason,
-			DiffScore:       frame.DiffScore,
+			PHashDistance:   frame.PHashDistance,
 		}
 		for _, row := range stored {
 			if row.Index == frame.Index {

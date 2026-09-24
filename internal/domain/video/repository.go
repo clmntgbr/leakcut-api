@@ -78,12 +78,24 @@ type VideoFrameDetailView struct {
 	StorageKey      string
 	ImageURL        string
 	SelectionReason string
-	DiffScore       float64
+	PHashDistance   int
 	OCRText         string
 	OCRStatus       string
 	OCRConfidence   float64
 	OCRErrorReason  string
+	OCRLines        []OCRLineView
 	Finding         *VideoFrameFindingView
+}
+
+type OCRPointView struct {
+	X int
+	Y int
+}
+
+type OCRLineView struct {
+	Text       string
+	Confidence float64
+	Box        []OCRPointView
 }
 
 type VideoListView struct {

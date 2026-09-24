@@ -67,7 +67,7 @@ Throughput is mostly `--scale ocr=N`. `OCR_INFER_CONCURRENCY` only helps if pref
 
 ## Schema
 
-`ocr_results`: `UNIQUE (frame_id)`. Redelivery overwrites. Status `success` or `failed`.
+`ocr_results`: `UNIQUE (frame_id)`. Redelivery overwrites. Status `success` or `failed`. `lines` is JSONB: each line is `{ text, confidence, box: [{x,y}×4] }` in pixels of the stored PNG. Classify still receives only joined `text`. `GET /videos/:id` returns `ocrText` and `ocrLines`.
 
 ## Code map
 

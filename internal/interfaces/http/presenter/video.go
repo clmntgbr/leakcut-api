@@ -52,18 +52,30 @@ type VideoDetailResponse struct {
 }
 
 type VideoFrameResponse struct {
-	ID              string                `json:"id"`
-	Index           int                   `json:"index"`
-	TimestampMs     int64                 `json:"timestampMs"`
-	StorageKey      string                `json:"storageKey"`
-	ImageURL        *string               `json:"imageUrl"`
-	SelectionReason string                `json:"selectionReason"`
-	DiffScore       float64               `json:"diffScore"`
-	OCRText         string                `json:"ocrText"`
-	OCRStatus       *string               `json:"ocrStatus"`
-	OCRConfidence   float64               `json:"ocrConfidence"`
-	OCRErrorReason  *string               `json:"ocrErrorReason"`
-	Finding         *VideoFindingResponse `json:"finding"`
+	ID              string                 `json:"id"`
+	Index           int                    `json:"index"`
+	TimestampMs     int64                  `json:"timestampMs"`
+	StorageKey      string                 `json:"storageKey"`
+	ImageURL        *string                `json:"imageUrl"`
+	SelectionReason string                 `json:"selectionReason"`
+	PHashDistance   int                    `json:"phashDistance"`
+	OCRText         string                 `json:"ocrText"`
+	OCRStatus       *string                `json:"ocrStatus"`
+	OCRConfidence   float64                `json:"ocrConfidence"`
+	OCRErrorReason  *string                `json:"ocrErrorReason"`
+	OCRLines        []VideoOCRLineResponse `json:"ocrLines"`
+	Finding         *VideoFindingResponse  `json:"finding"`
+}
+
+type VideoOCRPointResponse struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+}
+
+type VideoOCRLineResponse struct {
+	Text       string                  `json:"text"`
+	Confidence float64                 `json:"confidence"`
+	Box        []VideoOCRPointResponse `json:"box"`
 }
 
 type VideoFindingCategoryResponse struct {
@@ -146,12 +158,29 @@ func newVideoFrameResponses(views []domainvideo.VideoFrameDetailView) []VideoFra
 			StorageKey:      frame.StorageKey,
 			ImageURL:        optionalNonEmptyString(frame.ImageURL),
 			SelectionReason: frame.SelectionReason,
-			DiffScore:       frame.DiffScore,
+			PHashDistance:   frame.PHashDistance,
 			OCRText:         frame.OCRText,
 			OCRStatus:       optionalNonEmptyString(frame.OCRStatus),
 			OCRConfidence:   frame.OCRConfidence,
 			OCRErrorReason:  optionalNonEmptyString(frame.OCRErrorReason),
+			OCRLines:        newVideoOCRLineResponses(frame.OCRLines),
 			Finding:         newVideoFindingResponse(frame.Finding),
+		})
+	}
+	return out
+}
+
+func newVideoOCRLineResponses(lines []domainvideo.OCRLineView) []VideoOCRLineResponse {
+	out := make([]VideoOCRLineResponse, 0, len(lines))
+	for _, line := range lines {
+		box := make([]VideoOCRPointResponse, 0, len(line.Box))
+		for _, point := range line.Box {
+			box = append(box, VideoOCRPointResponse{X: point.X, Y: point.Y})
+		}
+		out = append(out, VideoOCRLineResponse{
+			Text:       line.Text,
+			Confidence: line.Confidence,
+			Box:        box,
 		})
 	}
 	return out

@@ -81,12 +81,12 @@ func (e VideoExtracting) AggregateID() string   { return e.VideoID }
 func (e VideoExtracting) OccurredAt() time.Time { return e.Timestamp }
 
 type ExtractedFramePayload struct {
-	ID              string  `json:"id,omitempty"`
-	Index           int     `json:"index"`
-	TimestampMs     int64   `json:"timestampMs"`
-	StorageKey      string  `json:"storageKey"`
-	SelectionReason string  `json:"selectionReason"`
-	DiffScore       float64 `json:"diffScore"`
+	ID              string `json:"id,omitempty"`
+	Index           int    `json:"index"`
+	TimestampMs     int64  `json:"timestampMs"`
+	StorageKey      string `json:"storageKey"`
+	SelectionReason string `json:"selectionReason"`
+	PHashDistance   int    `json:"phashDistance"`
 }
 
 type VideoFramesExtracted struct {
@@ -169,13 +169,25 @@ func (e VideoOCRBatchCompleted) EventType() string     { return EventTypeVideoOC
 func (e VideoOCRBatchCompleted) AggregateID() string   { return e.VideoID }
 func (e VideoOCRBatchCompleted) OccurredAt() time.Time { return e.Timestamp }
 
+type OCRPointPayload struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+}
+
+type OCRLinePayload struct {
+	Text       string            `json:"text"`
+	Confidence float64           `json:"confidence"`
+	Box        []OCRPointPayload `json:"box"`
+}
+
 type OCRFrameResultPayload struct {
-	FrameID     string  `json:"frameId"`
-	FrameIndex  int     `json:"frameIndex"`
-	TimestampMs int64   `json:"timestampMs"`
-	Text        string  `json:"text"`
-	Confidence  float64 `json:"confidence"`
-	Status      string  `json:"status"`
+	FrameID     string           `json:"frameId"`
+	FrameIndex  int              `json:"frameIndex"`
+	TimestampMs int64            `json:"timestampMs"`
+	Text        string           `json:"text"`
+	Confidence  float64          `json:"confidence"`
+	Status      string           `json:"status"`
+	Lines       []OCRLinePayload `json:"lines,omitempty"`
 }
 
 type VideoFramesOCRCompleted struct {

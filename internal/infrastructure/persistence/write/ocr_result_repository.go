@@ -31,7 +31,7 @@ func (r *ocrResultWriteRepository) UpsertAll(ctx context.Context, results []*dom
 	return DBWithContext(ctx, r.db).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "frame_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"text", "confidence", "status", "error_reason"}),
+			DoUpdates: clause.AssignmentColumns([]string{"text", "confidence", "status", "error_reason", "lines"}),
 		}).
 		Create(&rows).Error
 }

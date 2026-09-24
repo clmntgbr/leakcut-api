@@ -241,10 +241,20 @@ func TestVideoHandler_GetByID_Success_WithFindings(t *testing.T) {
 		StorageKey:      "videos/" + testutil.TestVideoID.String() + "/frames/0011.png",
 		ImageURL:        "http://localhost:9000/media/videos/" + testutil.TestVideoID.String() + "/frames/0011.png",
 		SelectionReason: "scene_change",
-		DiffScore:       0.42,
+		PHashDistance:   34,
 		OCRText:         "IBAN FR76 3000 6000 0112 3456 7890 189",
 		OCRStatus:       "success",
 		OCRConfidence:   0.91,
+		OCRLines: []domainvideo.OCRLineView{{
+			Text:       "IBAN FR76 3000 6000 0112 3456 7890 189",
+			Confidence: 0.91,
+			Box: []domainvideo.OCRPointView{
+				{X: 40, Y: 120},
+				{X: 420, Y: 120},
+				{X: 420, Y: 148},
+				{X: 40, Y: 148},
+			},
+		}},
 		Finding: &domainvideo.VideoFrameFindingView{
 			ID:           testutil.TestFindingID,
 			Confidential: true,
@@ -284,8 +294,11 @@ func TestVideoHandler_GetByID_Success_WithFindings(t *testing.T) {
 	if frame.ID != testutil.TestFrameID.String() {
 		t.Fatalf("frame id: got %s", frame.ID)
 	}
-	if frame.Index != 11 || frame.OCRText == "" {
+	if frame.Index != 11 || frame.OCRText == "" || frame.PHashDistance != 34 {
 		t.Fatalf("frame: %+v", frame)
+	}
+	if len(frame.OCRLines) != 1 || frame.OCRLines[0].Box[0].X != 40 {
+		t.Fatalf("ocr lines: %+v", frame.OCRLines)
 	}
 	if frame.ImageURL == nil || *frame.ImageURL == "" {
 		t.Fatal("expected frame image url")

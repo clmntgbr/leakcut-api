@@ -31,7 +31,7 @@ func (r *frameWriteRepository) UpsertAll(ctx context.Context, frames []*domainfr
 	return DBWithContext(ctx, r.db).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "job_id"}, {Name: "index"}},
-			DoUpdates: clause.AssignmentColumns([]string{"timestamp_ms", "storage_key", "selection_reason", "diff_score"}),
+			DoUpdates: clause.AssignmentColumns([]string{"timestamp_ms", "storage_key", "selection_reason", "phash_distance"}),
 		}).
 		Create(&rows).Error
 }

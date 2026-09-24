@@ -16,7 +16,7 @@ type Frame struct {
 	TimestampMs     int64
 	StorageKey      string
 	SelectionReason string
-	DiffScore       float64
+	PHashDistance   int
 }
 
 func NewFrame(
@@ -24,7 +24,7 @@ func NewFrame(
 	index int,
 	timestampMs int64,
 	storageKey, selectionReason string,
-	diffScore float64,
+	phashDistance int,
 ) *Frame {
 	return &Frame{
 		ID:              uuid.New(),
@@ -33,6 +33,6 @@ func NewFrame(
 		TimestampMs:     timestampMs,
 		StorageKey:      storageKey,
 		SelectionReason: selectionReason,
-		DiffScore:       diffScore,
+		PHashDistance:   phashDistance,
 	}
 }

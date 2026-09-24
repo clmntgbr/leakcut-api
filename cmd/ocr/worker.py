@@ -84,7 +84,7 @@ def ocr_frame(s3, bucket: str, frame: dict[str, Any]) -> dict[str, Any]:
     key = frame.get("storageKey") or ""
     try:
         data = download_frame(s3, bucket, key)
-        text, confidence, status = run_ocr(decode_image(data))
+        text, confidence, status, lines = run_ocr(decode_image(data))
         return {
             "frameId": frame_id,
             "frameIndex": frame.get("index", 0),
@@ -92,6 +92,7 @@ def ocr_frame(s3, bucket: str, frame: dict[str, Any]) -> dict[str, Any]:
             "text": text,
             "confidence": confidence,
             "status": status,
+            "lines": lines,
         }
     except Exception:
         logger.exception("ocr failed for frame %s", frame_id)
@@ -102,6 +103,7 @@ def ocr_frame(s3, bucket: str, frame: dict[str, Any]) -> dict[str, Any]:
             "text": "",
             "confidence": 0.0,
             "status": "failed",
+            "lines": [],
         }
 
 
