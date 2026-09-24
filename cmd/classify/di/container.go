@@ -39,6 +39,8 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 	outboxRepo := outbox.NewRepository(db)
 	dedupRepo := processed.NewRepository(db)
 
+	log.Printf("classify engine=%s", env.ClassifyEngine)
+
 	classifyHandler := videocommand.NewClassifyFramesHandler(
 		write.NewVideoWriteRepository(db),
 		write.NewJobWriteRepository(db),
@@ -46,7 +48,8 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 		write.NewOCRResultWriteRepository(db),
 		write.NewFindingWriteRepository(db),
 		outboxRepo,
-		classify.NewClient(
+		classify.NewClassifier(
+			env.ClassifyEngine,
 			env.AIGatewayURL,
 			env.AIGatewayAPIKey,
 			env.JevModel,

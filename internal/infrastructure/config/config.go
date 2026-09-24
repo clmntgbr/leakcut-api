@@ -64,6 +64,7 @@ type Config struct {
 	ClassifyEngineTimeout   time.Duration
 	ClassifyTimeout         time.Duration
 	ClassifyThreshold       float64
+	ClassifyEngine          string
 	AIGatewayURL            string
 	AIGatewayAPIKey         string
 	JevModel                string
@@ -127,6 +128,7 @@ func Load() *Config {
 		ClassifyEngineTimeout:   getEnvDuration("CLASSIFY_ENGINE_TIMEOUT", 30*time.Second),
 		ClassifyTimeout:         getEnvDuration("CLASSIFY_TIMEOUT", 10*time.Minute),
 		ClassifyThreshold:       getEnvFloatOrDefault("CLASSIFY_THRESHOLD", 0.7),
+		ClassifyEngine:          getEnvOrDefault("CLASSIFY_ENGINE", "jev"),
 		AIGatewayURL:            getEnvOrDefault("AI_GATEWAY_URL", "https://ai-gateway.vercel.sh"),
 		AIGatewayAPIKey:         firstNonEmpty(os.Getenv("AI_GATEWAY_API_KEY"), os.Getenv("JEV_API_KEY")),
 		JevModel:                getEnvOrDefault("JEV_MODEL", "typesafe-ai/jev"),

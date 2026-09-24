@@ -2,17 +2,22 @@
 
 ## Overview
 
-Decide whether each frame’s OCR text looks confidential. The `classify` worker consumes `video.frames_ocr_completed.v1` and calls Jev (Vercel AI Gateway). Results land in `frame_findings`.
+Decide whether each frame’s OCR text looks confidential. The `classify` worker consumes `video.frames_ocr_completed.v1`. Engine is `CLASSIFY_ENGINE`:
+
+| Value | Engine |
+|-------|--------|
+| `local` | Regex / heuristics in-process (dev default) |
+| `jev` | Vercel AI Gateway `typesafe-ai/jev` |
 
 ```
 video.frames_ocr_completed.v1 → queue classify
      → load OCR rows → skip empty text
-     → POST ai-gateway /v1/evaluate (typesafe-ai/jev)
+     → local rules or POST ai-gateway /v1/evaluate
      → upsert frame_findings
      → video.frames_classified.v1
 ```
 
-Jev runs **only** when trimmed OCR text is non-empty. Empty / whitespace → finding `skipped`, `confidential=false`. That is not a hit.
+Classification runs **only** when trimmed OCR text is non-empty. Empty / whitespace → finding `skipped`, `confidential=false`. That is not a hit.
 
 ## Queue
 
@@ -68,8 +73,9 @@ A score of `0.01`–`0.02` is a non-hit. Do not treat residual probability as a 
 
 | Variable | Role |
 |----------|------|
-| `AI_GATEWAY_URL` | Default `https://ai-gateway.vercel.sh` |
-| `AI_GATEWAY_API_KEY` or `JEV_API_KEY` | Bearer token |
+| `CLASSIFY_ENGINE` | `local` or `jev` (compose.dev defaults to `local`) |
+| `AI_GATEWAY_URL` | Default `https://ai-gateway.vercel.sh` (Jev only) |
+| `AI_GATEWAY_API_KEY` or `JEV_API_KEY` | Bearer token (Jev only) |
 | `CLASSIFY_THRESHOLD` | Confidential cutoff (default `0.7`) |
 
 ## Code map

@@ -134,6 +134,8 @@ services:
       - go-build-cache:/root/.cache/go-build
     env_file:
       - .env
+    environment:
+      CLASSIFY_ENGINE: ${CLASSIFY_ENGINE:-local}
     depends_on:
       database:
         condition: service_healthy
