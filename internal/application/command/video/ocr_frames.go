@@ -9,7 +9,7 @@ import (
 	"go-api/internal/application/messaging"
 	domainframe "go-api/internal/domain/frame"
 	domainjob "go-api/internal/domain/job"
-	domainocr "go-api/internal/domain/ocrresult"
+	domainocr "go-api/internal/domain/ocr"
 	"go-api/internal/domain/port"
 	domainvideo "go-api/internal/domain/video"
 
@@ -29,7 +29,7 @@ type OCRFramesHandler struct {
 	videoRepo     domainvideo.VideoWriteRepository
 	jobRepo       domainjob.JobWriteRepository
 	frameRepo     domainframe.FrameWriteRepository
-	ocrRepo       domainocr.ResultWriteRepository
+	ocrRepo       domainocr.WriteRepository
 	outbox        port.OutboxRepository
 	minConfidence float64
 }
@@ -38,7 +38,7 @@ func NewOCRFramesHandler(
 	videoRepo domainvideo.VideoWriteRepository,
 	jobRepo domainjob.JobWriteRepository,
 	frameRepo domainframe.FrameWriteRepository,
-	ocrRepo domainocr.ResultWriteRepository,
+	ocrRepo domainocr.WriteRepository,
 	outbox port.OutboxRepository,
 	minConfidence float64,
 ) *OCRFramesHandler {
@@ -53,7 +53,7 @@ func NewOCRFramesHandler(
 }
 
 func (h *OCRFramesHandler) Start(ctx context.Context, cmd StartOCRFramesCommand) error {
-	video, job, extractJob, err := h.load(ctx, cmd.VideoID)
+	video, job, _, err := h.load(ctx, cmd.VideoID)
 	if err != nil {
 		return err
 	}
@@ -61,14 +61,14 @@ func (h *OCRFramesHandler) Start(ctx context.Context, cmd StartOCRFramesCommand)
 		return nil
 	}
 
-	frames, err := h.frameRepo.ListByJobID(ctx, extractJob.ID)
+	frames, err := h.frameRepo.ListByVideoID(ctx, video.ID)
 	if err != nil {
 		return h.failOrRetry(ctx, video, job, err, "failed to load frames")
 	}
 
 	existing, err := h.ocrRepo.ListByFrameIDs(ctx, frameIDs(frames))
 	if err != nil {
-		return h.failOrRetry(ctx, video, job, err, "failed to load ocr results")
+		return h.failOrRetry(ctx, video, job, err, "failed to load ocr")
 	}
 	if err := h.markProcessing(ctx, video, job, len(frames), countFinal(existing)); err != nil {
 		return err
@@ -90,14 +90,14 @@ func (h *OCRFramesHandler) PersistBatch(ctx context.Context, cmd PersistOCRBatch
 		return nil
 	}
 
-	frames, err := h.frameRepo.ListByJobID(ctx, extractJob.ID)
+	frames, err := h.frameRepo.ListByVideoID(ctx, video.ID)
 	if err != nil {
 		return h.failOrRetry(ctx, video, job, err, "failed to load frames")
 	}
 
 	existing, err := h.ocrRepo.ListByFrameIDs(ctx, frameIDs(frames))
 	if err != nil {
-		return h.failOrRetry(ctx, video, job, err, "failed to load ocr results")
+		return h.failOrRetry(ctx, video, job, err, "failed to load ocr")
 	}
 	known := resultsByFrame(existing)
 	extractDone := extractJob.Status == domainjob.StatusFramesReady
@@ -110,7 +110,7 @@ func (h *OCRFramesHandler) PersistBatch(ctx context.Context, cmd PersistOCRBatch
 
 	incoming := h.normalizePayloads(cmd.Results)
 	if err := h.persistBatch(ctx, video, job, incoming, known); err != nil {
-		return h.failOrRetry(ctx, video, job, err, "failed to persist ocr results")
+		return h.failOrRetry(ctx, video, job, err, "failed to persist ocr")
 	}
 	if !extractDone {
 		return nil
@@ -118,7 +118,7 @@ func (h *OCRFramesHandler) PersistBatch(ctx context.Context, cmd PersistOCRBatch
 
 	stored, err := h.ocrRepo.ListByFrameIDs(ctx, frameIDs(frames))
 	if err != nil {
-		return h.failOrRetry(ctx, video, job, err, "failed to load ocr results")
+		return h.failOrRetry(ctx, video, job, err, "failed to load ocr")
 	}
 	if len(stored) < len(frames) || len(frames) == 0 {
 		return nil

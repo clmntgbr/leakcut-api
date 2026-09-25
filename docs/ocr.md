@@ -38,7 +38,7 @@ On startup the worker unbinds the legacy `video.frames_extracted.v1` key so old 
 
 `expectedFrameCount` comes from extract. `ocrCompletedCount` increments on each persist. Realtime `job.updated` is republished after every batch.
 
-`markReady` waits until the extract job is `frames_ready` **and** every frame has an `ocr_results` row. Early persist while extract is still running only upserts rows.
+`markReady` waits until the extract job is `frames_ready` **and** every frame has an `ocrs` row. Early persist while extract is still running only upserts rows.
 
 ## Engine
 
@@ -67,7 +67,7 @@ Throughput is mostly `--scale ocr=N`. `OCR_INFER_CONCURRENCY` only helps if pref
 
 ## Schema
 
-`ocr_results`: `UNIQUE (frame_id)`. Redelivery overwrites. Status `success` or `failed`. `lines` is JSONB: each line is `{ text, confidence, box: [{x,y}×4] }` in pixels of the stored PNG. Classify still receives only joined `text`. `GET /videos/:id` returns `ocrText` and `ocrLines`.
+`ocrs`: `UNIQUE (frame_id)`. Redelivery overwrites. Status `success` or `failed`. `lines` is JSONB: each line is `{ text, confidence, box: [{x,y}×4] }` in pixels of the stored PNG. Classify still receives only joined `text`. `GET /videos/:id` returns `ocrText` and `ocrLines`.
 
 ## Code map
 

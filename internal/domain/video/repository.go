@@ -57,16 +57,16 @@ type VideoView struct {
 	Frames             []VideoFrameDetailView
 }
 
-type FindingCategoryView struct {
+type ClassificationCategoryView struct {
 	Name        string  `json:"name"`
 	Probability float64 `json:"probability"`
 }
 
-type VideoFrameFindingView struct {
+type VideoFrameClassificationView struct {
 	ID           uuid.UUID
 	Confidential bool
 	Probability  float64
-	Categories   []FindingCategoryView
+	Categories   []ClassificationCategoryView
 	Status       string
 	ErrorReason  string
 }
@@ -84,7 +84,7 @@ type VideoFrameDetailView struct {
 	OCRConfidence   float64
 	OCRErrorReason  string
 	OCRLines        []OCRLineView
-	Finding         *VideoFrameFindingView
+	Classification  *VideoFrameClassificationView
 }
 
 type OCRPointView struct {

@@ -74,7 +74,7 @@ func (r *videoReadRepository) FindByID(ctx context.Context, id, userID uuid.UUID
 			classify_jobs.failure_reason AS classify_failure_reason,
 			COALESCE(ocr_jobs.expected_frame_count, 0) AS expected_frame_count,
 			COALESCE(ocr_jobs.ocr_completed_count, 0) AS ocr_completed_count,
-			COALESCE((SELECT COUNT(*) FROM frames WHERE frames.job_id = extract_jobs.id), 0) AS frame_count
+			COALESCE((SELECT COUNT(*) FROM frames WHERE frames.video_id = videos.id), 0) AS frame_count
 		`).
 		Joins("LEFT JOIN jobs extract_jobs ON extract_jobs.video_id = videos.id AND extract_jobs.type = ?", domainjob.TypeExtractFrames).
 		Joins("LEFT JOIN jobs ocr_jobs ON ocr_jobs.video_id = videos.id AND ocr_jobs.type = ?", domainjob.TypeOCR).
@@ -212,23 +212,23 @@ func normalizeVideoListSort(sortBy string) string {
 }
 
 type frameDetailRow struct {
-	ID              uuid.UUID  `gorm:"column:id"`
-	Index           int        `gorm:"column:index"`
-	TimestampMs     int64      `gorm:"column:timestamp_ms"`
-	StorageKey      string     `gorm:"column:storage_key"`
-	SelectionReason string     `gorm:"column:selection_reason"`
-	PHashDistance   int        `gorm:"column:phash_distance"`
-	OCRText         string     `gorm:"column:ocr_text"`
-	OCRStatus       string     `gorm:"column:ocr_status"`
-	OCRConfidence   float64    `gorm:"column:ocr_confidence"`
-	OCRErrorReason  string     `gorm:"column:ocr_error_reason"`
-	OCRLines        string     `gorm:"column:ocr_lines"`
-	FindingID       *uuid.UUID `gorm:"column:finding_id"`
-	Confidential    bool       `gorm:"column:confidential"`
-	Probability     float64    `gorm:"column:probability"`
-	Categories      string     `gorm:"column:categories"`
-	FindingStatus   string     `gorm:"column:finding_status"`
-	FindingError    string     `gorm:"column:finding_error"`
+	ID                   uuid.UUID  `gorm:"column:id"`
+	Index                int        `gorm:"column:index"`
+	TimestampMs          int64      `gorm:"column:timestamp_ms"`
+	StorageKey           string     `gorm:"column:storage_key"`
+	SelectionReason      string     `gorm:"column:selection_reason"`
+	PHashDistance        int        `gorm:"column:phash_distance"`
+	OCRText              string     `gorm:"column:ocr_text"`
+	OCRStatus            string     `gorm:"column:ocr_status"`
+	OCRConfidence        float64    `gorm:"column:ocr_confidence"`
+	OCRErrorReason       string     `gorm:"column:ocr_error_reason"`
+	OCRLines             string     `gorm:"column:ocr_lines"`
+	ClassificationID     *uuid.UUID `gorm:"column:classification_id"`
+	Confidential         bool       `gorm:"column:confidential"`
+	Probability          float64    `gorm:"column:probability"`
+	Categories           string     `gorm:"column:categories"`
+	ClassificationStatus string     `gorm:"column:classification_status"`
+	ClassificationError  string     `gorm:"column:classification_error"`
 }
 
 func (r *videoReadRepository) ListFramesByVideoID(ctx context.Context, id, userID uuid.UUID) ([]domainvideo.VideoFrameDetailView, error) {
@@ -242,22 +242,21 @@ func (r *videoReadRepository) ListFramesByVideoID(ctx context.Context, id, userI
 			frames.storage_key,
 			frames.selection_reason,
 			frames.phash_distance,
-			COALESCE(ocr_results.text, '') AS ocr_text,
-			COALESCE(ocr_results.status, '') AS ocr_status,
-			COALESCE(ocr_results.confidence, 0) AS ocr_confidence,
-			COALESCE(ocr_results.error_reason, '') AS ocr_error_reason,
-			COALESCE(ocr_results.lines::text, '[]') AS ocr_lines,
-			frame_findings.id AS finding_id,
-			COALESCE(frame_findings.confidential, FALSE) AS confidential,
-			COALESCE(frame_findings.probability, 0) AS probability,
-			COALESCE(frame_findings.categories::text, '[]') AS categories,
-			COALESCE(frame_findings.status, '') AS finding_status,
-			COALESCE(frame_findings.error_reason, '') AS finding_error
+			COALESCE(ocrs.text, '') AS ocr_text,
+			COALESCE(ocrs.status, '') AS ocr_status,
+			COALESCE(ocrs.confidence, 0) AS ocr_confidence,
+			COALESCE(ocrs.error_reason, '') AS ocr_error_reason,
+			COALESCE(ocrs.lines::text, '[]') AS ocr_lines,
+			classifications.id AS classification_id,
+			COALESCE(classifications.confidential, FALSE) AS confidential,
+			COALESCE(classifications.probability, 0) AS probability,
+			COALESCE(classifications.categories::text, '[]') AS categories,
+			COALESCE(classifications.status, '') AS classification_status,
+			COALESCE(classifications.error_reason, '') AS classification_error
 		`).
-		Joins("JOIN jobs ON jobs.id = frames.job_id AND jobs.type = ?", domainjob.TypeExtractFrames).
-		Joins("JOIN videos ON videos.id = jobs.video_id").
-		Joins("LEFT JOIN ocr_results ON ocr_results.frame_id = frames.id").
-		Joins("LEFT JOIN frame_findings ON frame_findings.frame_id = frames.id").
+		Joins("JOIN videos ON videos.id = frames.video_id").
+		Joins("LEFT JOIN ocrs ON ocrs.frame_id = frames.id").
+		Joins("LEFT JOIN classifications ON classifications.frame_id = frames.id").
 		Where("videos.id = ? AND videos.user_id = ?", id, userID).
 		Order("frames.index ASC").
 		Find(&rows).Error
@@ -279,7 +278,7 @@ func (r *videoReadRepository) ListFramesByVideoID(ctx context.Context, id, userI
 			OCRConfidence:   row.OCRConfidence,
 			OCRErrorReason:  row.OCRErrorReason,
 			OCRLines:        ocrLinesFromRow(row.OCRLines),
-			Finding:         findingViewFromRow(row),
+			Classification:  classificationViewFromRow(row),
 		})
 	}
 	return out, nil
@@ -315,21 +314,21 @@ func ocrLinesFromRow(raw string) []domainvideo.OCRLineView {
 	return out
 }
 
-func findingViewFromRow(row frameDetailRow) *domainvideo.VideoFrameFindingView {
-	if row.FindingID == nil {
+func classificationViewFromRow(row frameDetailRow) *domainvideo.VideoFrameClassificationView {
+	if row.ClassificationID == nil {
 		return nil
 	}
-	categories := make([]domainvideo.FindingCategoryView, 0)
+	categories := make([]domainvideo.ClassificationCategoryView, 0)
 	if row.Categories != "" {
 		_ = json.Unmarshal([]byte(row.Categories), &categories)
 	}
-	return &domainvideo.VideoFrameFindingView{
-		ID:           *row.FindingID,
+	return &domainvideo.VideoFrameClassificationView{
+		ID:           *row.ClassificationID,
 		Confidential: row.Confidential,
 		Probability:  row.Probability,
 		Categories:   categories,
-		Status:       row.FindingStatus,
-		ErrorReason:  row.FindingError,
+		Status:       row.ClassificationStatus,
+		ErrorReason:  row.ClassificationError,
 	}
 }
 

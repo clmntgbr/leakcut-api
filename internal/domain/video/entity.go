@@ -394,7 +394,7 @@ func (v *Video) MarkClassifying(jobID uuid.UUID, jobType, jobStatus string, expe
 	}
 }
 
-func (v *Video) MarkClassified(jobID uuid.UUID, jobType, jobStatus string, expected int, findings []FrameFindingPayload) error {
+func (v *Video) MarkClassified(jobID uuid.UUID, jobType, jobStatus string, expected int, classifications []ClassificationPayload) error {
 	if v.Status != StatusClassifying && v.Status != StatusOCRReady {
 		if v.Status == StatusClassified {
 			return nil
@@ -414,7 +414,7 @@ func (v *Video) MarkClassified(jobID uuid.UUID, jobType, jobStatus string, expec
 		Status:             v.Status,
 		JobStatus:          jobStatus,
 		ExpectedFrameCount: expected,
-		Findings:           findings,
+		Classifications:    classifications,
 		Timestamp:          now,
 	})
 	return nil

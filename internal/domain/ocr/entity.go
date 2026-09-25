@@ -1,4 +1,4 @@
-package ocrresult
+package ocr
 
 import (
 	"github.com/google/uuid"

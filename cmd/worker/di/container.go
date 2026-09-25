@@ -95,7 +95,7 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 	videoWriteRepo := write.NewVideoWriteRepository(db)
 	jobWriteRepo := write.NewJobWriteRepository(db)
 	frameWriteRepo := write.NewFrameWriteRepository(db)
-	ocrWriteRepo := write.NewOCRResultWriteRepository(db)
+	ocrWriteRepo := write.NewOCRWriteRepository(db)
 	minioStorage, err := storage.NewMinIOStorage(env)
 	if err != nil {
 		log.Fatalf("failed to create storage client: %v", err)

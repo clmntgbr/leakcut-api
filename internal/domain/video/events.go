@@ -245,30 +245,30 @@ func (e VideoClassifying) EventType() string     { return EventTypeVideoClassify
 func (e VideoClassifying) AggregateID() string   { return e.VideoID }
 func (e VideoClassifying) OccurredAt() time.Time { return e.Timestamp }
 
-type FindingCategoryPayload struct {
+type ClassificationCategoryPayload struct {
 	Name        string  `json:"name"`
 	Probability float64 `json:"probability"`
 }
 
-type FrameFindingPayload struct {
-	FrameID      string                   `json:"frameId"`
-	Confidential bool                     `json:"confidential"`
-	Probability  float64                  `json:"probability"`
-	Categories   []FindingCategoryPayload `json:"categories"`
-	Status       string                   `json:"status"`
+type ClassificationPayload struct {
+	FrameID      string                          `json:"frameId"`
+	Confidential bool                            `json:"confidential"`
+	Probability  float64                         `json:"probability"`
+	Categories   []ClassificationCategoryPayload `json:"categories"`
+	Status       string                          `json:"status"`
 }
 
 type VideoFramesClassified struct {
-	ID                 string                `json:"eventId"`
-	VideoID            string                `json:"videoId"`
-	UserID             string                `json:"userId,omitempty"`
-	JobID              string                `json:"jobId"`
-	JobType            string                `json:"jobType,omitempty"`
-	Status             string                `json:"status"`
-	JobStatus          string                `json:"jobStatus"`
-	ExpectedFrameCount int                   `json:"expectedFrameCount"`
-	Findings           []FrameFindingPayload `json:"findings"`
-	Timestamp          time.Time             `json:"timestamp"`
+	ID                 string                  `json:"eventId"`
+	VideoID            string                  `json:"videoId"`
+	UserID             string                  `json:"userId,omitempty"`
+	JobID              string                  `json:"jobId"`
+	JobType            string                  `json:"jobType,omitempty"`
+	Status             string                  `json:"status"`
+	JobStatus          string                  `json:"jobStatus"`
+	ExpectedFrameCount int                     `json:"expectedFrameCount"`
+	Classifications    []ClassificationPayload `json:"classifications"`
+	Timestamp          time.Time               `json:"timestamp"`
 }
 
 func (e VideoFramesClassified) EventID() string       { return e.ID }

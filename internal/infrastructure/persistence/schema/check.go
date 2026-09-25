@@ -17,8 +17,8 @@ func Models() []any {
 		&write.VideoModel{},
 		&write.JobModel{},
 		&write.FrameModel{},
-		&write.OCRResultModel{},
-		&write.FindingModel{},
+		&write.OCRModel{},
+		&write.ClassificationModel{},
 		&outbox.OutboxEvent{},
 		&processed.ProcessedEvent{},
 	}

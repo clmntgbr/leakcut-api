@@ -230,7 +230,7 @@ func TestVideoHandler_GetByID_Success(t *testing.T) {
 	}
 }
 
-func TestVideoHandler_GetByID_Success_WithFindings(t *testing.T) {
+func TestVideoHandler_GetByID_Success_WithClassifications(t *testing.T) {
 	view := sampleVideoView()
 	view.Status = domainvideo.StatusClassified
 	view.FrameCount = 1
@@ -255,11 +255,11 @@ func TestVideoHandler_GetByID_Success_WithFindings(t *testing.T) {
 				{X: 40, Y: 148},
 			},
 		}},
-		Finding: &domainvideo.VideoFrameFindingView{
-			ID:           testutil.TestFindingID,
+		Classification: &domainvideo.VideoFrameClassificationView{
+			ID:           testutil.TestClassificationID,
 			Confidential: true,
 			Probability:  0.88,
-			Categories: []domainvideo.FindingCategoryView{
+			Categories: []domainvideo.ClassificationCategoryView{
 				{Name: "iban", Probability: 0.88},
 				{Name: "email", Probability: 0.02},
 			},
@@ -303,14 +303,14 @@ func TestVideoHandler_GetByID_Success_WithFindings(t *testing.T) {
 	if frame.ImageURL == nil || *frame.ImageURL == "" {
 		t.Fatal("expected frame image url")
 	}
-	if frame.Finding == nil {
-		t.Fatal("expected finding")
+	if frame.Classification == nil {
+		t.Fatal("expected classification")
 	}
-	if !frame.Finding.Confidential || frame.Finding.Status != "success" {
-		t.Fatalf("finding: %+v", frame.Finding)
+	if !frame.Classification.Confidential || frame.Classification.Status != "success" {
+		t.Fatalf("classification: %+v", frame.Classification)
 	}
-	if len(frame.Finding.Categories) != 2 || frame.Finding.Categories[0].Name != "iban" {
-		t.Fatalf("categories: %+v", frame.Finding.Categories)
+	if len(frame.Classification.Categories) != 2 || frame.Classification.Categories[0].Name != "iban" {
+		t.Fatalf("categories: %+v", frame.Classification.Categories)
 	}
 }
 

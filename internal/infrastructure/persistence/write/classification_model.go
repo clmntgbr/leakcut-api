@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	domainfinding "go-api/internal/domain/finding"
+	domainclassification "go-api/internal/domain/classification"
 
 	"github.com/google/uuid"
 )
@@ -33,7 +33,7 @@ func (c *categoriesJSON) Scan(value any) error {
 	return nil
 }
 
-type FindingModel struct {
+type ClassificationModel struct {
 	ID           uuid.UUID      `gorm:"column:id;primaryKey"`
 	FrameID      uuid.UUID      `gorm:"column:frame_id"`
 	Confidential bool           `gorm:"column:confidential"`
@@ -43,36 +43,36 @@ type FindingModel struct {
 	ErrorReason  string         `gorm:"column:error_reason"`
 }
 
-func (FindingModel) TableName() string {
-	return "frame_findings"
+func (ClassificationModel) TableName() string {
+	return "classifications"
 }
 
-func findingModelFromDomain(f *domainfinding.Finding) *FindingModel {
-	categories := f.Categories
+func classificationModelFromDomain(c *domainclassification.Classification) *ClassificationModel {
+	categories := c.Categories
 	if categories == nil {
-		categories = []domainfinding.Category{}
+		categories = []domainclassification.Category{}
 	}
 	raw, err := json.Marshal(categories)
 	if err != nil {
 		raw = []byte("[]")
 	}
-	return &FindingModel{
-		ID:           f.ID,
-		FrameID:      f.FrameID,
-		Confidential: f.Confidential,
-		Probability:  f.Probability,
+	return &ClassificationModel{
+		ID:           c.ID,
+		FrameID:      c.FrameID,
+		Confidential: c.Confidential,
+		Probability:  c.Probability,
 		Categories:   categoriesJSON(raw),
-		Status:       f.Status,
-		ErrorReason:  f.ErrorReason,
+		Status:       c.Status,
+		ErrorReason:  c.ErrorReason,
 	}
 }
 
-func findingDomainFromModel(m *FindingModel) *domainfinding.Finding {
-	categories := []domainfinding.Category{}
+func classificationDomainFromModel(m *ClassificationModel) *domainclassification.Classification {
+	categories := []domainclassification.Category{}
 	if m.Categories != "" {
 		_ = json.Unmarshal([]byte(m.Categories), &categories)
 	}
-	return &domainfinding.Finding{
+	return &domainclassification.Classification{
 		ID:           m.ID,
 		FrameID:      m.FrameID,
 		Confidential: m.Confidential,

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	domainocr "go-api/internal/domain/ocrresult"
+	domainocr "go-api/internal/domain/ocr"
 
 	"github.com/google/uuid"
 )
@@ -33,7 +33,7 @@ func (c *ocrLinesJSON) Scan(value any) error {
 	return nil
 }
 
-type OCRResultModel struct {
+type OCRModel struct {
 	ID          uuid.UUID    `gorm:"column:id;primaryKey"`
 	FrameID     uuid.UUID    `gorm:"column:frame_id"`
 	Text        string       `gorm:"column:text"`
@@ -43,11 +43,11 @@ type OCRResultModel struct {
 	Lines       ocrLinesJSON `gorm:"column:lines;type:jsonb"`
 }
 
-func (OCRResultModel) TableName() string {
-	return "ocr_results"
+func (OCRModel) TableName() string {
+	return "ocrs"
 }
 
-func ocrResultModelFromDomain(r *domainocr.Result) *OCRResultModel {
+func ocrModelFromDomain(r *domainocr.Result) *OCRModel {
 	lines := r.Lines
 	if lines == nil {
 		lines = []domainocr.Line{}
@@ -56,7 +56,7 @@ func ocrResultModelFromDomain(r *domainocr.Result) *OCRResultModel {
 	if err != nil {
 		raw = []byte("[]")
 	}
-	return &OCRResultModel{
+	return &OCRModel{
 		ID:          r.ID,
 		FrameID:     r.FrameID,
 		Text:        r.Text,
@@ -67,7 +67,7 @@ func ocrResultModelFromDomain(r *domainocr.Result) *OCRResultModel {
 	}
 }
 
-func ocrResultDomainFromModel(m *OCRResultModel) *domainocr.Result {
+func ocrDomainFromModel(m *OCRModel) *domainocr.Result {
 	lines := []domainocr.Line{}
 	if m.Lines != "" {
 		_ = json.Unmarshal([]byte(m.Lines), &lines)

@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"go-api/internal/application/messaging"
-	domainfinding "go-api/internal/domain/finding"
+	domainclassification "go-api/internal/domain/classification"
 	domainframe "go-api/internal/domain/frame"
 	domainjob "go-api/internal/domain/job"
-	domainocr "go-api/internal/domain/ocrresult"
+	domainocr "go-api/internal/domain/ocr"
 	"go-api/internal/domain/port"
 	domainvideo "go-api/internal/domain/video"
 
@@ -22,23 +22,23 @@ type ClassifyFramesCommand struct {
 }
 
 type ClassifyFramesHandler struct {
-	videoRepo   domainvideo.VideoWriteRepository
-	jobRepo     domainjob.JobWriteRepository
-	frameRepo   domainframe.FrameWriteRepository
-	ocrRepo     domainocr.ResultWriteRepository
-	findingRepo domainfinding.FindingWriteRepository
-	outbox      port.OutboxRepository
-	classifier  port.Classifier
-	threshold   float64
-	timeout     time.Duration
+	videoRepo          domainvideo.VideoWriteRepository
+	jobRepo            domainjob.JobWriteRepository
+	frameRepo          domainframe.FrameWriteRepository
+	ocrRepo            domainocr.WriteRepository
+	classificationRepo domainclassification.WriteRepository
+	outbox             port.OutboxRepository
+	classifier         port.Classifier
+	threshold          float64
+	timeout            time.Duration
 }
 
 func NewClassifyFramesHandler(
 	videoRepo domainvideo.VideoWriteRepository,
 	jobRepo domainjob.JobWriteRepository,
 	frameRepo domainframe.FrameWriteRepository,
-	ocrRepo domainocr.ResultWriteRepository,
-	findingRepo domainfinding.FindingWriteRepository,
+	ocrRepo domainocr.WriteRepository,
+	classificationRepo domainclassification.WriteRepository,
 	outbox port.OutboxRepository,
 	classifier port.Classifier,
 	threshold float64,
@@ -48,15 +48,15 @@ func NewClassifyFramesHandler(
 		threshold = 0.7
 	}
 	return &ClassifyFramesHandler{
-		videoRepo:   videoRepo,
-		jobRepo:     jobRepo,
-		frameRepo:   frameRepo,
-		ocrRepo:     ocrRepo,
-		findingRepo: findingRepo,
-		outbox:      outbox,
-		classifier:  classifier,
-		threshold:   threshold,
-		timeout:     timeout,
+		videoRepo:          videoRepo,
+		jobRepo:            jobRepo,
+		frameRepo:          frameRepo,
+		ocrRepo:            ocrRepo,
+		classificationRepo: classificationRepo,
+		outbox:             outbox,
+		classifier:         classifier,
+		threshold:          threshold,
+		timeout:            timeout,
 	}
 }
 
@@ -67,7 +67,7 @@ func (h *ClassifyFramesHandler) Handle(ctx context.Context, cmd ClassifyFramesCo
 		defer cancel()
 	}
 
-	video, job, extractJob, err := h.load(ctx, cmd.VideoID)
+	video, job, _, err := h.load(ctx, cmd.VideoID)
 	if err != nil {
 		return err
 	}
@@ -75,29 +75,29 @@ func (h *ClassifyFramesHandler) Handle(ctx context.Context, cmd ClassifyFramesCo
 		return nil
 	}
 
-	frames, err := h.frameRepo.ListByJobID(ctx, extractJob.ID)
+	frames, err := h.frameRepo.ListByVideoID(ctx, video.ID)
 	if err != nil {
 		return h.failOrRetry(ctx, video, job, err, "failed to load frames")
 	}
 
 	ocrResults, err := h.ocrRepo.ListByFrameIDs(ctx, frameIDs(frames))
 	if err != nil {
-		return h.failOrRetry(ctx, video, job, err, "failed to load ocr results")
+		return h.failOrRetry(ctx, video, job, err, "failed to load ocr")
 	}
 
-	existing, err := h.findingRepo.ListByFrameIDs(ctx, frameIDs(frames))
+	existing, err := h.classificationRepo.ListByFrameIDs(ctx, frameIDs(frames))
 	if err != nil {
-		return h.failOrRetry(ctx, video, job, err, "failed to load findings")
+		return h.failOrRetry(ctx, video, job, err, "failed to load classifications")
 	}
-	known := findingsByFrame(existing)
+	known := classificationsByFrame(existing)
 
 	if err := h.markProcessing(ctx, video, job, len(frames)); err != nil {
 		return err
 	}
 
 	pending, skipped := pendingClassifyFrames(frames, ocrResults, existing)
-	if err := h.persistFindings(ctx, skipped, known); err != nil {
-		return h.failOrRetry(ctx, video, job, err, "failed to persist findings")
+	if err := h.persistClassifications(ctx, skipped, known); err != nil {
+		return h.failOrRetry(ctx, video, job, err, "failed to persist classifications")
 	}
 
 	if len(pending) > 0 {
@@ -106,14 +106,14 @@ func (h *ClassifyFramesHandler) Handle(ctx context.Context, cmd ClassifyFramesCo
 			return h.failOrRetry(ctx, video, job, recErr, "classify service unavailable")
 		}
 		results := h.normalizeResults(pending, raw)
-		if err := h.persistFindings(ctx, results, known); err != nil {
-			return h.failOrRetry(ctx, video, job, err, "failed to persist findings")
+		if err := h.persistClassifications(ctx, results, known); err != nil {
+			return h.failOrRetry(ctx, video, job, err, "failed to persist classifications")
 		}
 	}
 
-	stored, err := h.findingRepo.ListByFrameIDs(ctx, frameIDs(frames))
+	stored, err := h.classificationRepo.ListByFrameIDs(ctx, frameIDs(frames))
 	if err != nil {
-		return h.failOrRetry(ctx, video, job, err, "failed to load findings")
+		return h.failOrRetry(ctx, video, job, err, "failed to load classifications")
 	}
 	if len(stored) < len(frames) {
 		return h.failOrRetry(ctx, video, job, errors.New("classify incomplete"), "classify incomplete")
@@ -175,19 +175,19 @@ func (h *ClassifyFramesHandler) markProcessing(ctx context.Context, video *domai
 	return nil
 }
 
-func (h *ClassifyFramesHandler) persistFindings(
+func (h *ClassifyFramesHandler) persistClassifications(
 	ctx context.Context,
-	findings []*domainfinding.Finding,
-	known map[uuid.UUID]*domainfinding.Finding,
+	items []*domainclassification.Classification,
+	known map[uuid.UUID]*domainclassification.Classification,
 ) error {
-	if len(findings) == 0 {
+	if len(items) == 0 {
 		return nil
 	}
-	if err := h.findingRepo.UpsertAll(ctx, findings); err != nil {
+	if err := h.classificationRepo.UpsertAll(ctx, items); err != nil {
 		return err
 	}
-	for _, finding := range findings {
-		known[finding.FrameID] = finding
+	for _, item := range items {
+		known[item.FrameID] = item
 	}
 	return nil
 }
@@ -227,9 +227,14 @@ func (h *ClassifyFramesHandler) markFailed(ctx context.Context, video *domainvid
 	})
 }
 
-func (h *ClassifyFramesHandler) markReady(ctx context.Context, video *domainvideo.Video, job *domainjob.Job, findings []*domainfinding.Finding) error {
+func (h *ClassifyFramesHandler) markReady(
+	ctx context.Context,
+	video *domainvideo.Video,
+	job *domainjob.Job,
+	items []*domainclassification.Classification,
+) error {
 	job.MarkClassified()
-	if err := video.MarkClassified(job.ID, job.Type, job.Status, job.ExpectedFrameCount, toFindingPayloads(findings)); err != nil {
+	if err := video.MarkClassified(job.ID, job.Type, job.Status, job.ExpectedFrameCount, toClassificationPayloads(items)); err != nil {
 		return err
 	}
 
@@ -244,13 +249,16 @@ func (h *ClassifyFramesHandler) markReady(ctx context.Context, video *domainvide
 	})
 }
 
-func (h *ClassifyFramesHandler) normalizeResults(frames []port.ClassifyFrame, raw []port.ClassifyItemResult) []*domainfinding.Finding {
+func (h *ClassifyFramesHandler) normalizeResults(
+	frames []port.ClassifyFrame,
+	raw []port.ClassifyItemResult,
+) []*domainclassification.Classification {
 	byFrame := make(map[string]port.ClassifyItemResult, len(raw))
 	for _, item := range raw {
 		byFrame[item.FrameID] = item
 	}
 
-	out := make([]*domainfinding.Finding, 0, len(frames))
+	out := make([]*domainclassification.Classification, 0, len(frames))
 	for _, frame := range frames {
 		frameID, err := uuid.Parse(frame.FrameID)
 		if err != nil {
@@ -258,18 +266,18 @@ func (h *ClassifyFramesHandler) normalizeResults(frames []port.ClassifyFrame, ra
 		}
 		item, ok := byFrame[frame.FrameID]
 		if !ok {
-			out = append(out, domainfinding.NewFinding(frameID, false, 0, nil, domainfinding.StatusFailed, "missing classify result"))
+			out = append(out, domainclassification.New(frameID, false, 0, nil, domainclassification.StatusFailed, "missing classify result"))
 			continue
 		}
 		status := item.Status
 		if status == "" {
-			status = domainfinding.StatusSuccess
+			status = domainclassification.StatusSuccess
 		}
 		reason := ""
-		if status == domainfinding.StatusFailed {
+		if status == domainclassification.StatusFailed {
 			reason = "classify engine failed"
 		}
-		out = append(out, domainfinding.NewFinding(
+		out = append(out, domainclassification.New(
 			frameID,
 			item.Confidential,
 			item.Probability,
@@ -284,12 +292,12 @@ func (h *ClassifyFramesHandler) normalizeResults(frames []port.ClassifyFrame, ra
 func pendingClassifyFrames(
 	frames []*domainframe.Frame,
 	ocrResults []*domainocr.Result,
-	findings []*domainfinding.Finding,
-) ([]port.ClassifyFrame, []*domainfinding.Finding) {
-	done := make(map[uuid.UUID]struct{}, len(findings))
-	for _, finding := range findings {
-		if finding.IsFinal() {
-			done[finding.FrameID] = struct{}{}
+	items []*domainclassification.Classification,
+) ([]port.ClassifyFrame, []*domainclassification.Classification) {
+	done := make(map[uuid.UUID]struct{}, len(items))
+	for _, item := range items {
+		if item.IsFinal() {
+			done[item.FrameID] = struct{}{}
 		}
 	}
 
@@ -299,7 +307,7 @@ func pendingClassifyFrames(
 	}
 
 	pending := make([]port.ClassifyFrame, 0)
-	skipped := make([]*domainfinding.Finding, 0)
+	skipped := make([]*domainclassification.Classification, 0)
 	for _, frame := range frames {
 		if _, ok := done[frame.ID]; ok {
 			continue
@@ -310,12 +318,12 @@ func pendingClassifyFrames(
 			text = strings.TrimSpace(result.Text)
 		}
 		if text == "" {
-			skipped = append(skipped, domainfinding.NewFinding(
+			skipped = append(skipped, domainclassification.New(
 				frame.ID,
 				false,
 				0,
 				nil,
-				domainfinding.StatusSkipped,
+				domainclassification.StatusSkipped,
 				"",
 			))
 			continue
@@ -325,38 +333,38 @@ func pendingClassifyFrames(
 	return pending, skipped
 }
 
-func findingsByFrame(findings []*domainfinding.Finding) map[uuid.UUID]*domainfinding.Finding {
-	out := make(map[uuid.UUID]*domainfinding.Finding, len(findings))
-	for _, finding := range findings {
-		out[finding.FrameID] = finding
-	}
-	return out
-}
-
-func toDomainCategories(items []port.ClassifyCategory) []domainfinding.Category {
-	out := make([]domainfinding.Category, 0, len(items))
+func classificationsByFrame(items []*domainclassification.Classification) map[uuid.UUID]*domainclassification.Classification {
+	out := make(map[uuid.UUID]*domainclassification.Classification, len(items))
 	for _, item := range items {
-		out = append(out, domainfinding.Category{Name: item.Name, Probability: item.Probability})
+		out[item.FrameID] = item
 	}
 	return out
 }
 
-func toFindingPayloads(findings []*domainfinding.Finding) []domainvideo.FrameFindingPayload {
-	out := make([]domainvideo.FrameFindingPayload, 0, len(findings))
-	for _, finding := range findings {
-		categories := make([]domainvideo.FindingCategoryPayload, 0, len(finding.Categories))
-		for _, category := range finding.Categories {
-			categories = append(categories, domainvideo.FindingCategoryPayload{
+func toDomainCategories(items []port.ClassifyCategory) []domainclassification.Category {
+	out := make([]domainclassification.Category, 0, len(items))
+	for _, item := range items {
+		out = append(out, domainclassification.Category{Name: item.Name, Probability: item.Probability})
+	}
+	return out
+}
+
+func toClassificationPayloads(items []*domainclassification.Classification) []domainvideo.ClassificationPayload {
+	out := make([]domainvideo.ClassificationPayload, 0, len(items))
+	for _, item := range items {
+		categories := make([]domainvideo.ClassificationCategoryPayload, 0, len(item.Categories))
+		for _, category := range item.Categories {
+			categories = append(categories, domainvideo.ClassificationCategoryPayload{
 				Name:        category.Name,
 				Probability: category.Probability,
 			})
 		}
-		out = append(out, domainvideo.FrameFindingPayload{
-			FrameID:      finding.FrameID.String(),
-			Confidential: finding.Confidential,
-			Probability:  finding.Probability,
+		out = append(out, domainvideo.ClassificationPayload{
+			FrameID:      item.FrameID.String(),
+			Confidential: item.Confidential,
+			Probability:  item.Probability,
 			Categories:   categories,
-			Status:       finding.Status,
+			Status:       item.Status,
 		})
 	}
 	return out

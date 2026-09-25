@@ -175,7 +175,7 @@ func (h *ExtractFramesHandler) extractAndStore(
 			return fmt.Errorf("%w: %w", errPersistFrame, err)
 		}
 		frame := domainframe.NewFrame(
-			job.ID,
+			video.ID,
 			item.Index,
 			item.TimestampMs,
 			storageKey,
@@ -208,7 +208,7 @@ func (h *ExtractFramesHandler) persistFrameAndRequestOCR(
 		if err := h.frameRepo.UpsertAll(txCtx, []*domainframe.Frame{frame}); err != nil {
 			return err
 		}
-		stored, err := h.frameRepo.ListByJobID(txCtx, frame.JobID)
+		stored, err := h.frameRepo.ListByVideoID(txCtx, frame.VideoID)
 		if err != nil {
 			return err
 		}

@@ -3,29 +3,29 @@ package write
 import (
 	"context"
 
-	domainocr "go-api/internal/domain/ocrresult"
+	domainocr "go-api/internal/domain/ocr"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-type ocrResultWriteRepository struct {
+type ocrWriteRepository struct {
 	db *gorm.DB
 }
 
-func NewOCRResultWriteRepository(db *gorm.DB) domainocr.ResultWriteRepository {
-	return &ocrResultWriteRepository{db: db}
+func NewOCRWriteRepository(db *gorm.DB) domainocr.WriteRepository {
+	return &ocrWriteRepository{db: db}
 }
 
-func (r *ocrResultWriteRepository) UpsertAll(ctx context.Context, results []*domainocr.Result) error {
+func (r *ocrWriteRepository) UpsertAll(ctx context.Context, results []*domainocr.Result) error {
 	if len(results) == 0 {
 		return nil
 	}
 
-	rows := make([]OCRResultModel, 0, len(results))
+	rows := make([]OCRModel, 0, len(results))
 	for _, item := range results {
-		rows = append(rows, *ocrResultModelFromDomain(item))
+		rows = append(rows, *ocrModelFromDomain(item))
 	}
 
 	return DBWithContext(ctx, r.db).
@@ -36,19 +36,19 @@ func (r *ocrResultWriteRepository) UpsertAll(ctx context.Context, results []*dom
 		Create(&rows).Error
 }
 
-func (r *ocrResultWriteRepository) ListByFrameIDs(ctx context.Context, frameIDs []uuid.UUID) ([]*domainocr.Result, error) {
+func (r *ocrWriteRepository) ListByFrameIDs(ctx context.Context, frameIDs []uuid.UUID) ([]*domainocr.Result, error) {
 	if len(frameIDs) == 0 {
 		return nil, nil
 	}
 
-	var rows []OCRResultModel
+	var rows []OCRModel
 	if err := DBWithContext(ctx, r.db).Where("frame_id IN ?", frameIDs).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 
 	out := make([]*domainocr.Result, 0, len(rows))
 	for i := range rows {
-		out = append(out, ocrResultDomainFromModel(&rows[i]))
+		out = append(out, ocrDomainFromModel(&rows[i]))
 	}
 	return out, nil
 }

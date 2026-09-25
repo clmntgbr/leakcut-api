@@ -11,7 +11,7 @@ const (
 
 type Frame struct {
 	ID              uuid.UUID
-	JobID           uuid.UUID
+	VideoID         uuid.UUID
 	Index           int
 	TimestampMs     int64
 	StorageKey      string
@@ -20,7 +20,7 @@ type Frame struct {
 }
 
 func NewFrame(
-	jobID uuid.UUID,
+	videoID uuid.UUID,
 	index int,
 	timestampMs int64,
 	storageKey, selectionReason string,
@@ -28,7 +28,7 @@ func NewFrame(
 ) *Frame {
 	return &Frame{
 		ID:              uuid.New(),
-		JobID:           jobID,
+		VideoID:         videoID,
 		Index:           index,
 		TimestampMs:     timestampMs,
 		StorageKey:      storageKey,

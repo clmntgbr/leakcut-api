@@ -52,19 +52,19 @@ type VideoDetailResponse struct {
 }
 
 type VideoFrameResponse struct {
-	ID              string                 `json:"id"`
-	Index           int                    `json:"index"`
-	TimestampMs     int64                  `json:"timestampMs"`
-	StorageKey      string                 `json:"storageKey"`
-	ImageURL        *string                `json:"imageUrl"`
-	SelectionReason string                 `json:"selectionReason"`
-	PHashDistance   int                    `json:"phashDistance"`
-	OCRText         string                 `json:"ocrText"`
-	OCRStatus       *string                `json:"ocrStatus"`
-	OCRConfidence   float64                `json:"ocrConfidence"`
-	OCRErrorReason  *string                `json:"ocrErrorReason"`
-	OCRLines        []VideoOCRLineResponse `json:"ocrLines"`
-	Finding         *VideoFindingResponse  `json:"finding"`
+	ID              string                       `json:"id"`
+	Index           int                          `json:"index"`
+	TimestampMs     int64                        `json:"timestampMs"`
+	StorageKey      string                       `json:"storageKey"`
+	ImageURL        *string                      `json:"imageUrl"`
+	SelectionReason string                       `json:"selectionReason"`
+	PHashDistance   int                          `json:"phashDistance"`
+	OCRText         string                       `json:"ocrText"`
+	OCRStatus       *string                      `json:"ocrStatus"`
+	OCRConfidence   float64                      `json:"ocrConfidence"`
+	OCRErrorReason  *string                      `json:"ocrErrorReason"`
+	OCRLines        []VideoOCRLineResponse       `json:"ocrLines"`
+	Classification  *VideoClassificationResponse `json:"classification"`
 }
 
 type VideoOCRPointResponse struct {
@@ -78,18 +78,18 @@ type VideoOCRLineResponse struct {
 	Box        []VideoOCRPointResponse `json:"box"`
 }
 
-type VideoFindingCategoryResponse struct {
+type VideoClassificationCategoryResponse struct {
 	Name        string  `json:"name"`
 	Probability float64 `json:"probability"`
 }
 
-type VideoFindingResponse struct {
-	ID           string                         `json:"id"`
-	Confidential bool                           `json:"confidential"`
-	Probability  float64                        `json:"probability"`
-	Categories   []VideoFindingCategoryResponse `json:"categories"`
-	Status       string                         `json:"status"`
-	ErrorReason  *string                        `json:"errorReason"`
+type VideoClassificationResponse struct {
+	ID           string                                `json:"id"`
+	Confidential bool                                  `json:"confidential"`
+	Probability  float64                               `json:"probability"`
+	Categories   []VideoClassificationCategoryResponse `json:"categories"`
+	Status       string                                `json:"status"`
+	ErrorReason  *string                               `json:"errorReason"`
 }
 
 type VideoJobResponse struct {
@@ -164,7 +164,7 @@ func newVideoFrameResponses(views []domainvideo.VideoFrameDetailView) []VideoFra
 			OCRConfidence:   frame.OCRConfidence,
 			OCRErrorReason:  optionalNonEmptyString(frame.OCRErrorReason),
 			OCRLines:        newVideoOCRLineResponses(frame.OCRLines),
-			Finding:         newVideoFindingResponse(frame.Finding),
+			Classification:  newVideoClassificationResponse(frame.Classification),
 		})
 	}
 	return out
@@ -186,18 +186,18 @@ func newVideoOCRLineResponses(lines []domainvideo.OCRLineView) []VideoOCRLineRes
 	return out
 }
 
-func newVideoFindingResponse(view *domainvideo.VideoFrameFindingView) *VideoFindingResponse {
+func newVideoClassificationResponse(view *domainvideo.VideoFrameClassificationView) *VideoClassificationResponse {
 	if view == nil {
 		return nil
 	}
-	categories := make([]VideoFindingCategoryResponse, 0, len(view.Categories))
+	categories := make([]VideoClassificationCategoryResponse, 0, len(view.Categories))
 	for _, category := range view.Categories {
-		categories = append(categories, VideoFindingCategoryResponse{
+		categories = append(categories, VideoClassificationCategoryResponse{
 			Name:        category.Name,
 			Probability: category.Probability,
 		})
 	}
-	return &VideoFindingResponse{
+	return &VideoClassificationResponse{
 		ID:           view.ID.String(),
 		Confidential: view.Confidential,
 		Probability:  view.Probability,

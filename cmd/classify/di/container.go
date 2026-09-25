@@ -45,8 +45,8 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 		write.NewVideoWriteRepository(db),
 		write.NewJobWriteRepository(db),
 		write.NewFrameWriteRepository(db),
-		write.NewOCRResultWriteRepository(db),
-		write.NewFindingWriteRepository(db),
+		write.NewOCRWriteRepository(db),
+		write.NewClassificationWriteRepository(db),
 		outboxRepo,
 		classify.NewClassifier(
 			env.ClassifyEngine,

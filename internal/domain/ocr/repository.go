@@ -1,4 +1,4 @@
-package ocrresult
+package ocr
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 )
 
-type ResultWriteRepository interface {
+type WriteRepository interface {
 	UpsertAll(ctx context.Context, results []*Result) error
 	ListByFrameIDs(ctx context.Context, frameIDs []uuid.UUID) ([]*Result, error)
 }

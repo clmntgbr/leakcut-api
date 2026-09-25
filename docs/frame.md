@@ -22,7 +22,7 @@ MinIO → POST /webhooks/minio/object-created → outbox video.uploaded.v1
 |--------|------|------|-------------|
 | `POST` | `/api/videos/upload-url` | JWT | Presigned PUT (`filename`, `contentType`, `sizeBytes`) |
 | `GET` | `/api/videos` | JWT | `PaginateResponse` — `id`, `originalFilename`, `thumbnailUrl`, `status`, `createdAt` |
-| `GET` | `/api/videos/:id` | JWT | Full detail (jobs, frames, OCR, findings, signed URLs) |
+| `GET` | `/api/videos/:id` | JWT | Full detail (jobs, frames, OCR, classifications, signed URLs) |
 | `POST` | `/webhooks/minio/object-created` | MinIO token | Confirms `original.mp4` landed |
 | `POST` | `/webhooks/videos` | HMAC | Remote URL ingest (`202`) |
 
@@ -41,7 +41,7 @@ MinIO → POST /webhooks/minio/object-created → outbox video.uploaded.v1
 
 Later statuses (`ocr_*`, `classifying`, `classified`) are owned by the [ocr](ocr.md) and [classify](classify.md) docs.
 
-`GET /api/videos/:id` embeds `jobs[]` and `frames[]`. Each frame carries `ocrText` / `ocrLines` (`box` in PNG pixels) / `ocrStatus` and optional `finding` (`confidential`, `probability`, `categories[]`). Presigned `videoUrl`, `thumbnailUrl`, and `imageUrl` expire with the storage TTL.
+`GET /api/videos/:id` embeds `jobs[]` and `frames[]`. Each frame carries `ocrText` / `ocrLines` (`box` in PNG pixels) / `ocrStatus` and optional `classification` (`confidential`, `probability`, `categories[]`). Presigned `videoUrl`, `thumbnailUrl`, and `imageUrl` expire with the storage TTL.
 
 ## Frame selection
 
@@ -75,7 +75,7 @@ media/
 
 - Corrupt / unsupported codec → `extraction_failed`, DLQ after retries.
 - Timeout → same, configurable `FRAME_EXTRACTION_TIMEOUT`.
-- Redelivery → upsert `(job_id, index)` and overwrite the PNG. pHash is always against the last kept frame.
+- Redelivery → upsert `(video_id, index)` and overwrite the PNG. pHash is always against the last kept frame.
 
 ## Code map
 

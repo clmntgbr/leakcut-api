@@ -13,11 +13,11 @@ Decide whether each frame’s OCR text looks confidential. The `classify` worker
 video.frames_ocr_completed.v1 → queue classify
      → load OCR rows → skip empty text
      → local rules or POST ai-gateway /v1/evaluate
-     → upsert frame_findings
+     → upsert classifications
      → video.frames_classified.v1
 ```
 
-Classification runs **only** when trimmed OCR text is non-empty. Empty / whitespace → finding `skipped`, `confidential=false`. That is not a hit.
+Classification runs **only** when trimmed OCR text is non-empty. Empty / whitespace → classification `skipped`, `confidential=false`. That is not a hit.
 
 ## Queue
 
@@ -32,9 +32,9 @@ Classification runs **only** when trimmed OCR text is non-empty. Empty / whitesp
 
 ## Decision
 
-Jev answers a fixed list of boolean questions. `probability` stored on the finding is `max(question probabilities)`. `confidential` is `probability ≥ CLASSIFY_THRESHOLD`.
+Jev answers a fixed list of boolean questions. `probability` stored on the classification is `max(question probabilities)`. `confidential` is `probability ≥ CLASSIFY_THRESHOLD`.
 
-Questions are atomic booleans (no “or”). Category name stored on the finding:
+Questions are atomic booleans (no “or”). Category name stored on the classification:
 
 | Category | Jev question |
 |----------|----------------|
@@ -55,7 +55,7 @@ Questions are atomic booleans (no “or”). Category name stored on the finding
 
 A score of `0.01`–`0.02` is a non-hit. Do not treat residual probability as a leak.
 
-## Finding status
+## Classification status
 
 | Status | Meaning |
 |--------|---------|
@@ -67,7 +67,7 @@ A score of `0.01`–`0.02` is a non-hit. Do not treat residual probability as a 
 
 ## Schema
 
-`frame_findings`: `UNIQUE (frame_id)`. `categories` is jsonb (`[]` when none). Persistence uses a string `Valuer` so GORM does not send `[]byte` as `bytea`.
+`classifications`: `UNIQUE (frame_id)`. `categories` is jsonb (`[]` when none). Persistence uses a string `Valuer` so GORM does not send `[]byte` as `bytea`.
 
 ## Env
 
@@ -85,7 +85,7 @@ A score of `0.01`–`0.02` is a non-hit. Do not treat residual probability as a 
 | Worker | `cmd/classify` |
 | Command | `internal/application/command/video/classify_frames.go` |
 | Jev client | `internal/infrastructure/classify/client.go` |
-| Domain | `internal/domain/finding/` |
+| Domain | `internal/domain/classification/` |
 | Event start | `internal/application/event/video/on_ocr_completed_classify.go` |
 
-`GET /api/videos/:id` embeds each frame’s finding — see [upload & frame extraction](frame.md).
+`GET /api/videos/:id` embeds each frame’s `classification` — see [upload & frame extraction](frame.md).

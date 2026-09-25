@@ -8,6 +8,6 @@ import (
 
 type FrameWriteRepository interface {
 	UpsertAll(ctx context.Context, frames []*Frame) error
-	ListByJobID(ctx context.Context, jobID uuid.UUID) ([]*Frame, error)
-	CountByJobID(ctx context.Context, jobID uuid.UUID) (int, error)
+	ListByVideoID(ctx context.Context, videoID uuid.UUID) ([]*Frame, error)
+	CountByVideoID(ctx context.Context, videoID uuid.UUID) (int, error)
 }

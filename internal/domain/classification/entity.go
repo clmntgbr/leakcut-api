@@ -1,4 +1,4 @@
-package finding
+package classification
 
 import "github.com/google/uuid"
 
@@ -13,7 +13,7 @@ type Category struct {
 	Probability float64 `json:"probability"`
 }
 
-type Finding struct {
+type Classification struct {
 	ID           uuid.UUID
 	FrameID      uuid.UUID
 	Confidential bool
@@ -23,11 +23,17 @@ type Finding struct {
 	ErrorReason  string
 }
 
-func NewFinding(frameID uuid.UUID, confidential bool, probability float64, categories []Category, status, errorReason string) *Finding {
+func New(
+	frameID uuid.UUID,
+	confidential bool,
+	probability float64,
+	categories []Category,
+	status, errorReason string,
+) *Classification {
 	if categories == nil {
 		categories = []Category{}
 	}
-	return &Finding{
+	return &Classification{
 		ID:           uuid.New(),
 		FrameID:      frameID,
 		Confidential: confidential,
@@ -38,6 +44,6 @@ func NewFinding(frameID uuid.UUID, confidential bool, probability float64, categ
 	}
 }
 
-func (f *Finding) IsFinal() bool {
-	return f.Status == StatusSuccess || f.Status == StatusSkipped
+func (c *Classification) IsFinal() bool {
+	return c.Status == StatusSuccess || c.Status == StatusSkipped
 }
