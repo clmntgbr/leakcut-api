@@ -30,6 +30,8 @@ Classification runs **only** when trimmed OCR text is non-empty. Empty / whitesp
 
 `classify` has no `container_name` — `--scale classify=2` is allowed. One message per **video** (after all OCR rows exist), so extra replicas help across videos, not inside one video.
 
+The `classify` job uses the shared statuses `pending` → `processing` → `success` / `failed` (`type=classify`).
+
 ## Decision
 
 Jev answers a fixed list of boolean questions. `probability` stored on the classification is `max(question probabilities)`. `confidential` is `probability ≥ CLASSIFY_THRESHOLD`.

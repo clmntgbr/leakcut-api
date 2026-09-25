@@ -57,7 +57,7 @@ func (h *OCRFramesHandler) Start(ctx context.Context, cmd StartOCRFramesCommand)
 	if err != nil {
 		return err
 	}
-	if job.Status == domainjob.StatusOCRReady || video.Status == domainvideo.StatusOCRReady {
+	if job.Status == domainjob.StatusSuccess || video.Status == domainvideo.StatusOCRReady {
 		return nil
 	}
 
@@ -86,7 +86,7 @@ func (h *OCRFramesHandler) PersistBatch(ctx context.Context, cmd PersistOCRBatch
 	if err != nil {
 		return err
 	}
-	if job.Status == domainjob.StatusOCRReady || video.Status == domainvideo.StatusOCRReady {
+	if job.Status == domainjob.StatusSuccess || video.Status == domainvideo.StatusOCRReady {
 		return nil
 	}
 
@@ -100,7 +100,7 @@ func (h *OCRFramesHandler) PersistBatch(ctx context.Context, cmd PersistOCRBatch
 		return h.failOrRetry(ctx, video, job, err, "failed to load ocr")
 	}
 	known := resultsByFrame(existing)
-	extractDone := extractJob.Status == domainjob.StatusFramesReady
+	extractDone := extractJob.Status == domainjob.StatusSuccess
 
 	if extractDone && (video.Status == domainvideo.StatusFramesReady || job.Status == domainjob.StatusPending) {
 		if err := h.markProcessing(ctx, video, job, len(frames), countFinal(existing)); err != nil {
@@ -138,12 +138,12 @@ func (h *OCRFramesHandler) load(ctx context.Context, videoID uuid.UUID) (*domain
 		return nil, nil, nil, messaging.NonRetryable(domainvideo.ErrVideoNotFound)
 	}
 
-	extractJob, err := h.jobRepo.GetByVideoIDAndType(ctx, video.ID, domainjob.TypeExtractFrames)
+	extractJob, err := h.jobRepo.GetByVideoIDAndType(ctx, video.ID, domainjob.TypeFrame)
 	if err != nil {
 		return nil, nil, nil, messaging.Retryable(err)
 	}
 	if extractJob == nil {
-		return nil, nil, nil, messaging.NonRetryable(errors.New("extract frames job not found"))
+		return nil, nil, nil, messaging.NonRetryable(errors.New("frame job not found"))
 	}
 
 	job, err := h.jobRepo.GetByVideoIDAndType(ctx, video.ID, domainjob.TypeOCR)
@@ -165,7 +165,8 @@ func (h *OCRFramesHandler) markProcessing(
 	job *domainjob.Job,
 	expected, alreadyCompleted int,
 ) error {
-	job.MarkOCRProcessing(expected, alreadyCompleted)
+	job.SetOCRProgress(expected, alreadyCompleted)
+	job.MarkProcessing()
 	if err := video.MarkOCRProcessing(job.ID, job.Type, job.Status, expected, alreadyCompleted); err != nil {
 		return messaging.NonRetryable(err)
 	}
@@ -250,7 +251,7 @@ func (h *OCRFramesHandler) markFailed(
 	job *domainjob.Job,
 	reason string,
 ) error {
-	job.MarkOCRFailed(reason)
+	job.MarkFailed(reason)
 	if err := video.MarkOCRFailed(job.ID, job.Type, job.Status, reason, job.ExpectedFrameCount, job.OCRCompletedCount); err != nil {
 		return err
 	}
@@ -275,7 +276,7 @@ func (h *OCRFramesHandler) markReady(
 	frames []*domainframe.Frame,
 	results []*domainocr.Result,
 ) error {
-	job.MarkOCRReady()
+	job.MarkSuccess()
 	if err := video.MarkOCRReady(job.ID, job.Type, job.Status, job.ExpectedFrameCount, job.OCRCompletedCount, toOCRPayloads(frames, results)); err != nil {
 		return err
 	}

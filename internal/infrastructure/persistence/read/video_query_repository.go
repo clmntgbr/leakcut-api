@@ -76,7 +76,7 @@ func (r *videoReadRepository) FindByID(ctx context.Context, id, userID uuid.UUID
 			COALESCE(ocr_jobs.ocr_completed_count, 0) AS ocr_completed_count,
 			COALESCE((SELECT COUNT(*) FROM frames WHERE frames.video_id = videos.id), 0) AS frame_count
 		`).
-		Joins("LEFT JOIN jobs extract_jobs ON extract_jobs.video_id = videos.id AND extract_jobs.type = ?", domainjob.TypeExtractFrames).
+		Joins("LEFT JOIN jobs extract_jobs ON extract_jobs.video_id = videos.id AND extract_jobs.type = ?", domainjob.TypeFrame).
 		Joins("LEFT JOIN jobs ocr_jobs ON ocr_jobs.video_id = videos.id AND ocr_jobs.type = ?", domainjob.TypeOCR).
 		Joins("LEFT JOIN jobs classify_jobs ON classify_jobs.video_id = videos.id AND classify_jobs.type = ?", domainjob.TypeClassify).
 		Where("videos.id = ? AND videos.user_id = ?", id, userID).
@@ -96,7 +96,7 @@ func videoViewFromRow(row videoViewRow) *domainvideo.VideoView {
 	if row.ExtractJobID != nil {
 		jobs = append(jobs, domainvideo.JobView{
 			ID:            *row.ExtractJobID,
-			Type:          domainjob.TypeExtractFrames,
+			Type:          domainjob.TypeFrame,
 			Status:        row.ExtractJobStatus,
 			FrameCount:    row.FrameCount,
 			FailureReason: row.ExtractFailureReason,

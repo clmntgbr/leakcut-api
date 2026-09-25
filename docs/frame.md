@@ -12,8 +12,9 @@ Two ingest paths:
 ```
 client → POST /api/videos/upload-url → MinIO PUT
 MinIO → POST /webhooks/minio/object-created → outbox video.uploaded.v1
-     → queue frame → extract → per-frame video.ocr_frame_requested.v1
-                  → video.frames_extracted.v1 (counts + realtime)
+     → queue frame → extract (upload + upsert frames only)
+                  → video.frames_extracted.v1 (one outbox event)
+     → queue ocr → OCR all frames → video.ocr_batch_completed.v1
 ```
 
 ## HTTP routes
@@ -33,15 +34,15 @@ MinIO → POST /webhooks/minio/object-created → outbox video.uploaded.v1
 | Video status | When |
 |--------------|------|
 | `pending_upload` | Presigned URL issued |
-| `extraction_queued` | Upload confirmed, `extract_frames` job created |
+| `extraction_queued` | Upload confirmed, `frame` job created |
 | `extracting` | `frame` worker started |
-| `frames_ready` | Retained frames stored; OCR requests already in flight |
+| `frames_ready` | Retained frames stored; OCR may already be running |
 | `extraction_failed` | Unreadable video / ffmpeg / timeout |
 | `upload_expired` | No PUT before the URL TTL |
 
-Later statuses (`ocr_*`, `classifying`, `classified`) are owned by the [ocr](ocr.md) and [classify](classify.md) docs.
+Jobs use shared statuses (`pending` / `processing` / `success` / `failed`) plus `type` (`frame` / `ocr` / `classify`). Video statuses above are the pipeline cursor; later ones (`ocr_*`, `classifying`, `classified`) are in [ocr](ocr.md) and [classify](classify.md).
 
-`GET /api/videos/:id` embeds `jobs[]` and `frames[]`. Each frame carries `ocrText` / `ocrLines` (`box` in PNG pixels) / `ocrStatus` and optional `classification` (`confidential`, `probability`, `categories[]`). Presigned `videoUrl`, `thumbnailUrl`, and `imageUrl` expire with the storage TTL.
+`GET /api/videos/:id` embeds `jobs[]` and `frames[]`. Each frame carries `ocrText` / `ocrLines` (`box` in JPEG pixels) / `ocrStatus` and optional `classification` (`confidential`, `probability`, `categories[]`). Presigned `videoUrl`, `thumbnailUrl`, and `imageUrl` expire with the storage TTL.
 
 ## Frame selection
 
@@ -52,15 +53,16 @@ ffmpeg decodes at `analysis_fps` (not 30 fps). Each candidate gets a perceptual 
 | `analysis_fps` | `2` | Decode rate for the pHash pass |
 | `phash_distance_threshold` | `14` | Keep as `scene_change` (Hamming) |
 | `max_interval_seconds` | `15` | Safety net on a static screen |
-| `FRAME_MAX_WIDTH_PX` | `1280` | ffmpeg `scale='min(1280,iw)':-2` before upload |
+| `FRAME_MAX_WIDTH_PX` | `960` | ffmpeg `scale='min(960,iw)':-2` before upload (JPEG) |
+| `FRAME_UPLOAD_CONCURRENCY` | `4` | Parallel MinIO puts while ffmpeg keeps decoding |
 
-Only retained PNGs are stored. Same pixels for MinIO, OCR, and `GET /videos/:id`.
+Only retained JPEGs are stored. Same pixels for MinIO, OCR, and `GET /videos/:id`.
 
 ## Per-frame publish
 
-ffmpeg streams PNGs (`image2pipe`). Each retained frame is uploaded and written to the outbox (`video.ocr_frame_requested.v1`) immediately — OCR does not wait for extract to finish. The main `worker` relay publishes it (~`OUTBOX_POLL_INTERVAL`). Replicas compete on that queue.
+ffmpeg streams JPEGs (`image2pipe` / mjpeg). Each retained frame is uploaded (pool of `FRAME_UPLOAD_CONCURRENCY`) and upserted in Postgres — **no outbox per frame**. When extraction finishes, one `video.frames_extracted.v1` carries the retained list and `frameCount`.
 
-When extraction finishes, `video.frames_extracted.v1` carries the retained list (`phashDistance` per frame) and `frameCount` so OCR can set `expectedFrameCount`.
+OCR starts from that video-level event (see [ocr](ocr.md)).
 
 ## Storage layout
 
@@ -68,14 +70,14 @@ When extraction finishes, `video.frames_extracted.v1` carries the retained list 
 media/
   videos/{video_id}/original.mp4
   videos/{video_id}/thumbnail.jpg
-  videos/{video_id}/frames/{index}.png
+  videos/{video_id}/frames/{index}.jpg
 ```
 
 ## Errors
 
 - Corrupt / unsupported codec → `extraction_failed`, DLQ after retries.
 - Timeout → same, configurable `FRAME_EXTRACTION_TIMEOUT`.
-- Redelivery → upsert `(video_id, index)` and overwrite the PNG. pHash is always against the last kept frame.
+- Redelivery → upsert `(video_id, index)` and overwrite the JPEG. pHash is always against the last kept frame.
 
 ## Code map
 

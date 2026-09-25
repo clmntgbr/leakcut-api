@@ -9,8 +9,9 @@ Keep the pipeline cheap on long videos without dropping screens that might conta
 | `analysis_fps` | `2` | Decode rate for the pHash pass |
 | `phash_distance_threshold` | `14` | Higher → fewer `scene_change` keeps (Hamming vs last kept) |
 | `max_interval_seconds` | `15` | Safety net on a static screen |
-| `FRAME_MAX_WIDTH_PX` | `1280` | ffmpeg scale at extract (OCR sees the same PNG) |
-| `--scale ocr=N` | `2` | Competing consumers on `video.ocr_frame_requested.v1` |
+| `FRAME_MAX_WIDTH_PX` | `960` | ffmpeg scale at extract (OCR sees the same JPEG) |
+| `FRAME_UPLOAD_CONCURRENCY` | `4` | Parallel MinIO puts during extract |
+| `--scale ocr=N` | `2` | Competing consumers on `video.frames_extracted.v1` (one video each) |
 | `OCR_CONCURRENCY` | `1` | RabbitMQ prefetch per OCR replica |
 
 A previous 5-minute clip at ~1.6 fps / 8% produced ~490 frames. Pixel luminance also missed same-dark-theme scene changes. pHash (default 14) targets ~40–60 keeps on a 5-minute clip. If volume is still high, raise the threshold (16, 18, 20); if a scene is missed, lower it (12, 10). There is no pre-OCR “has text?” gate — false negatives would skip real leaks.
@@ -30,14 +31,14 @@ docker compose -f compose.dev.yaml up --scale ocr=2 --scale frame=2 --scale clas
 
 ## Incremental OCR
 
-ffmpeg streams candidates. Each retained frame is stored and written to the outbox (`video.ocr_frame_requested.v1`) before the next decode. Replicas compete immediately; OCR does not wait for extract to finish.
+ffmpeg streams candidates. Each retained frame is uploaded in a small pool and upserted — no per-frame outbox. One `video.frames_extracted.v1` starts OCR for the whole video.
 
 Outbox poll is `OUTBOX_POLL_INTERVAL` (default `2s`). That is the delay between “frame stored” and “an OCR replica receives it”.
 
 ## What not to do
 
 - Scale the main `worker` — two relays double-publish outbox rows.
-- Downscale again in the OCR worker — the PNG is already 1280-wide.
+- Downscale again in the OCR worker — the JPEG is already 960-wide.
 - Add a cheap “blank image” skip before OCR without a measured false-negative budget.
 
 ## Code map

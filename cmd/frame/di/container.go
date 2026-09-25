@@ -57,6 +57,7 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 		infraVideo.NewFrameExtractor(),
 		env.FrameExtractionTimeout,
 		env.FrameMaxWidthPx,
+		env.FrameUploadConcurrency,
 	)
 
 	reg := registry.NewHandlerRegistry()

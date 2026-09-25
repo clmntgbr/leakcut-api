@@ -216,7 +216,7 @@ func TestVideoHandler_GetByID_Success(t *testing.T) {
 	if len(out.Jobs) != 1 {
 		t.Fatalf("jobs: got %d want 1", len(out.Jobs))
 	}
-	if out.Jobs[0].Type != "extract_frames" || out.Jobs[0].Status != "pending" {
+	if out.Jobs[0].Type != "frame" || out.Jobs[0].Status != "pending" {
 		t.Fatalf("jobs[0]: %+v", out.Jobs[0])
 	}
 	if out.VideoURL == nil || *out.VideoURL == "" {
@@ -238,8 +238,8 @@ func TestVideoHandler_GetByID_Success_WithClassifications(t *testing.T) {
 		ID:              testutil.TestFrameID,
 		Index:           11,
 		TimestampMs:     3666,
-		StorageKey:      "videos/" + testutil.TestVideoID.String() + "/frames/0011.png",
-		ImageURL:        "http://localhost:9000/media/videos/" + testutil.TestVideoID.String() + "/frames/0011.png",
+		StorageKey:      "videos/" + testutil.TestVideoID.String() + "/frames/0011.jpg",
+		ImageURL:        "http://localhost:9000/media/videos/" + testutil.TestVideoID.String() + "/frames/0011.jpg",
 		SelectionReason: "scene_change",
 		PHashDistance:   34,
 		OCRText:         "IBAN FR76 3000 6000 0112 3456 7890 189",
@@ -318,12 +318,12 @@ func TestVideoHandler_GetByID_Success_WithOCRJob(t *testing.T) {
 	view := sampleVideoView()
 	view.Status = domainvideo.StatusOCRProcessing
 	view.JobID = &testutil.TestOCRJobID
-	view.JobStatus = "ocr_processing"
+	view.JobStatus = "processing"
 	view.ExpectedFrameCount = 12
 	view.OCRCompletedCount = 3
 	view.Jobs = []domainvideo.JobView{
-		{ID: testutil.TestJobID, Type: "extract_frames", Status: "frames_ready", FrameCount: 12},
-		{ID: testutil.TestOCRJobID, Type: "ocr", Status: "ocr_processing", ExpectedFrameCount: 12, OCRCompletedCount: 3},
+		{ID: testutil.TestJobID, Type: "frame", Status: "success", FrameCount: 12},
+		{ID: testutil.TestOCRJobID, Type: "ocr", Status: "processing", ExpectedFrameCount: 12, OCRCompletedCount: 3},
 	}
 	get := &mockGetVideoByIDHandler{view: view}
 	h := newVideoHandler(nil, get)
@@ -349,7 +349,7 @@ func TestVideoHandler_GetByID_Success_WithOCRJob(t *testing.T) {
 	if out.JobID == nil || *out.JobID != testutil.TestOCRJobID.String() {
 		t.Fatalf("job id: got %v want OCR job", out.JobID)
 	}
-	if out.JobStatus == nil || *out.JobStatus != "ocr_processing" {
+	if out.JobStatus == nil || *out.JobStatus != "processing" {
 		t.Fatalf("job status: got %v", out.JobStatus)
 	}
 	if len(out.Jobs) != 2 {

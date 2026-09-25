@@ -3,10 +3,9 @@ package video
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"image/png"
+	"image/jpeg"
 	"io"
 	"math"
 	"os"
@@ -21,7 +20,7 @@ import (
 	"github.com/corona10/goimagehash"
 )
 
-var pngSignature = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+const defaultJPEGQuality = 5
 
 type FrameExtractor struct{}
 
@@ -110,7 +109,8 @@ func (e *FrameExtractor) ExtractFrames(
 			params.MaxWidthPx,
 		),
 		"-f", "image2pipe",
-		"-vcodec", "png",
+		"-vcodec", "mjpeg",
+		"-q:v", strconv.Itoa(defaultJPEGQuality),
 		"pipe:1",
 	)
 	var stderr bytes.Buffer
@@ -131,7 +131,7 @@ func (e *FrameExtractor) ExtractFrames(
 	readErr := error(nil)
 
 	for {
-		data, err := readPNG(stdout)
+		data, err := readJPEG(stdout)
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 				break
@@ -142,7 +142,7 @@ func (e *FrameExtractor) ExtractFrames(
 
 		timestampMs := int64(math.Round(float64(candidate) * 1000 / params.AnalysisFPS))
 		candidate++
-		hash, err := perceptionHashPNG(data)
+		hash, err := perceptionHashJPEG(data)
 		if err != nil {
 			readErr = err
 			break
@@ -197,38 +197,38 @@ func (e *FrameExtractor) ExtractFrames(
 	return nil
 }
 
-func readPNG(r io.Reader) ([]byte, error) {
+func readJPEG(r io.Reader) ([]byte, error) {
 	var buf bytes.Buffer
-	sig := make([]byte, 8)
-	if _, err := io.ReadFull(r, sig); err != nil {
-		return nil, err
-	}
-	if !bytes.Equal(sig, pngSignature) {
-		return nil, fmt.Errorf("invalid png signature")
-	}
-	buf.Write(sig)
-
-	header := make([]byte, 8)
+	prev := byte(0)
+	started := false
+	b := make([]byte, 1)
 	for {
-		if _, err := io.ReadFull(r, header); err != nil {
-			return nil, err
+		if _, err := io.ReadFull(r, b); err != nil {
+			if !started {
+				return nil, err
+			}
+			return nil, fmt.Errorf("truncated jpeg: %w", err)
 		}
-		buf.Write(header)
-		length := binary.BigEndian.Uint32(header[:4])
-		typ := string(header[4:8])
-		chunk := make([]byte, int(length)+4)
-		if _, err := io.ReadFull(r, chunk); err != nil {
-			return nil, err
+		cur := b[0]
+		if !started {
+			if prev == 0xFF && cur == 0xD8 {
+				buf.WriteByte(0xFF)
+				buf.WriteByte(0xD8)
+				started = true
+			}
+			prev = cur
+			continue
 		}
-		buf.Write(chunk)
-		if typ == "IEND" {
+		buf.WriteByte(cur)
+		if prev == 0xFF && cur == 0xD9 {
 			return buf.Bytes(), nil
 		}
+		prev = cur
 	}
 }
 
-func perceptionHashPNG(raw []byte) (*goimagehash.ImageHash, error) {
-	img, err := png.Decode(bytes.NewReader(raw))
+func perceptionHashJPEG(raw []byte) (*goimagehash.ImageHash, error) {
+	img, err := jpeg.Decode(bytes.NewReader(raw))
 	if err != nil {
 		return nil, fmt.Errorf("decode frame: %w", err)
 	}

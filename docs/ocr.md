@@ -5,40 +5,39 @@
 Read text from each retained frame. Inference is a Python AMQP worker (`cmd/ocr`). Persistence stays on the main Go `worker`. There is no HTTP OCR API.
 
 ```
-extract upserts frame → outbox video.ocr_frame_requested.v1
-     → queue ocr (any replica) → download PNG → RapidOCR
-     → video.ocr_batch_completed.v1 (one result)
+extract upserts frames → outbox video.frames_extracted.v1 (one event)
+     → queue ocr (one video per message) → download JPEGs → RapidOCR
+     → video.ocr_batch_completed.v1 (chunks of results)
      → main worker persist → job.updated (ocrCompletedCount)
-     → when extract is frames_ready and all rows exist
-       → video.frames_ocr_completed.v1 → classify
+     → when all rows exist → video.frames_ocr_completed.v1 → classify
 ```
 
-One queue message per frame. Replicas compete; a 5-minute video fans out as soon as frames land, not after extract finishes.
+One queue message per **video** after extract finishes. Scale OCR across videos; within a video, `OCR_INFER_CONCURRENCY` runs frames in parallel.
 
 ## Queue
 
 | Setting | Value |
 |---------|-------|
 | Queue | `OCR_QUEUE` (`ocr`) |
-| Routing | `OCR_ROUTING_KEY` (`video.ocr_frame_requested.v1`) |
+| Routing | `OCR_ROUTING_KEY` (`video.frames_extracted.v1`) |
 | Exchange | `domain.events` |
 | Binary | `cmd/ocr/worker.py` (RapidOCR + onnxruntime) |
 
-On startup the worker unbinds the legacy `video.frames_extracted.v1` key so old per-video messages are not consumed twice.
+On startup the worker unbinds the legacy `video.ocr_frame_requested.v1` key.
 
 ## Jobs
 
 | Job type | Owner | Role |
 |----------|-------|------|
-| `extract_frames` | `frame` | Writes frames + per-frame OCR requests |
+| `frame` | `frame` | Writes frames only; one `video.frames_extracted.v1` at the end |
 | `ocr` | main `worker` | Created on `video.frames_extracted.v1`; counters only |
 | `classify` | `classify` | Started after `video.frames_ocr_completed.v1` |
 
-`ocr` job statuses: `queued` → `ocr_processing` → `ocr_ready` / `ocr_failed`.
+All jobs share the same statuses: `pending` → `processing` → `success` / `failed`. Distinguish stages with `type`.
 
 `expectedFrameCount` comes from extract. `ocrCompletedCount` increments on each persist. Realtime `job.updated` is republished after every batch.
 
-`markReady` waits until the extract job is `frames_ready` **and** every frame has an `ocrs` row. Early persist while extract is still running only upserts rows.
+`markReady` waits until the `frame` job is `success` **and** every frame has an `ocrs` row. Early persist while extract is still running only upserts rows.
 
 ## Engine
 
@@ -51,7 +50,7 @@ RapidOCR + ONNX Runtime (CPU). Paddle was dropped after aarch64 SIGSEGV.
 | `OCR_INTRA_OP_THREADS` | `2` | onnxruntime threads per inference |
 | `OCR_BATCH_SIZE` | `8` | Unused (one frame per message) |
 
-Resize happens at extract (`FRAME_MAX_WIDTH_PX`), not here. The worker downloads the stored PNG as-is.
+Resize happens at extract (`FRAME_MAX_WIDTH_PX`), not here. The worker downloads the stored JPEG as-is.
 
 Empty OCR text is a success with `text=""`. Classify will `skip` that frame.
 
@@ -67,7 +66,7 @@ Throughput is mostly `--scale ocr=N`. `OCR_INFER_CONCURRENCY` only helps if pref
 
 ## Schema
 
-`ocrs`: `UNIQUE (frame_id)`. Redelivery overwrites. Status `success` or `failed`. `lines` is JSONB: each line is `{ text, confidence, box: [{x,y}×4] }` in pixels of the stored PNG. Classify still receives only joined `text`. `GET /videos/:id` returns `ocrText` and `ocrLines`.
+`ocrs`: `UNIQUE (frame_id)`. Redelivery overwrites. Status `success` or `failed`. `lines` is JSONB: each line is `{ text, confidence, box: [{x,y}×4] }` in pixels of the stored JPEG. Classify still receives only joined `text`. `GET /videos/:id` returns `ocrText` and `ocrLines`.
 
 ## Code map
 

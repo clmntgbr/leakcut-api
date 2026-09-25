@@ -7,29 +7,24 @@ import (
 )
 
 const (
-	TypeExtractFrames = "extract_frames"
-	TypeOCR           = "ocr"
-	TypeClassify      = "classify"
+	TypeFrame    = "frame"
+	TypeOCR      = "ocr"
+	TypeClassify = "classify"
 )
 
 const (
-	StatusPending          = "pending"
-	StatusExtractingFrames = "extracting_frames"
-	StatusFramesReady      = "frames_ready"
-	StatusOCRProcessing    = "ocr_processing"
-	StatusOCRReady         = "ocr_ready"
-	StatusOCRFailed        = "ocr_failed"
-	StatusClassifying      = "classifying"
-	StatusClassified       = "classified"
-	StatusClassifyFailed   = "classify_failed"
-	StatusFailed           = "failed"
+	StatusPending    = "pending"
+	StatusProcessing = "processing"
+	StatusSuccess    = "success"
+	StatusFailed     = "failed"
 )
 
 const (
 	DefaultAnalysisFPS            = 2.0
 	DefaultPHashDistanceThreshold = 14
 	DefaultMaxIntervalSeconds     = 15
-	DefaultFrameMaxWidthPx        = 1280
+	DefaultFrameMaxWidthPx        = 960
+	DefaultFrameUploadConcurrency = 4
 )
 
 type Job struct {
@@ -47,11 +42,11 @@ type Job struct {
 	CompletedAt            *time.Time
 }
 
-func NewExtractFramesJob(videoID uuid.UUID) *Job {
+func NewFrameJob(videoID uuid.UUID) *Job {
 	return &Job{
 		ID:                     uuid.New(),
 		VideoID:                videoID,
-		Type:                   TypeExtractFrames,
+		Type:                   TypeFrame,
 		Status:                 StatusPending,
 		AnalysisFPS:            DefaultAnalysisFPS,
 		PHashDistanceThreshold: DefaultPHashDistanceThreshold,
@@ -80,67 +75,16 @@ func NewClassifyJob(videoID uuid.UUID) *Job {
 	}
 }
 
-func (j *Job) MarkExtracting() {
-	j.Status = StatusExtractingFrames
+func (j *Job) MarkProcessing() {
+	j.Status = StatusProcessing
 	j.FailureReason = ""
 	j.CompletedAt = nil
 }
 
-func (j *Job) MarkFramesReady(frameCount int) {
+func (j *Job) MarkSuccess() {
 	now := time.Now().UTC()
-	j.Status = StatusFramesReady
+	j.Status = StatusSuccess
 	j.FailureReason = ""
-	j.ExpectedFrameCount = frameCount
-	j.CompletedAt = &now
-}
-
-func (j *Job) MarkOCRProcessing(expected, alreadyCompleted int) {
-	j.Status = StatusOCRProcessing
-	j.FailureReason = ""
-	j.ExpectedFrameCount = expected
-	j.OCRCompletedCount = alreadyCompleted
-	j.CompletedAt = nil
-}
-
-func (j *Job) AddOCRCompleted(n int) {
-	if n <= 0 {
-		return
-	}
-	j.OCRCompletedCount += n
-}
-
-func (j *Job) MarkOCRReady() {
-	now := time.Now().UTC()
-	j.Status = StatusOCRReady
-	j.FailureReason = ""
-	j.CompletedAt = &now
-}
-
-func (j *Job) MarkOCRFailed(reason string) {
-	now := time.Now().UTC()
-	j.Status = StatusOCRFailed
-	j.FailureReason = reason
-	j.CompletedAt = &now
-}
-
-func (j *Job) MarkClassifying(expected int) {
-	j.Status = StatusClassifying
-	j.FailureReason = ""
-	j.ExpectedFrameCount = expected
-	j.CompletedAt = nil
-}
-
-func (j *Job) MarkClassified() {
-	now := time.Now().UTC()
-	j.Status = StatusClassified
-	j.FailureReason = ""
-	j.CompletedAt = &now
-}
-
-func (j *Job) MarkClassifyFailed(reason string) {
-	now := time.Now().UTC()
-	j.Status = StatusClassifyFailed
-	j.FailureReason = reason
 	j.CompletedAt = &now
 }
 
@@ -149,4 +93,20 @@ func (j *Job) MarkFailed(reason string) {
 	j.Status = StatusFailed
 	j.FailureReason = reason
 	j.CompletedAt = &now
+}
+
+func (j *Job) SetExpectedFrameCount(n int) {
+	j.ExpectedFrameCount = n
+}
+
+func (j *Job) SetOCRProgress(expected, alreadyCompleted int) {
+	j.ExpectedFrameCount = expected
+	j.OCRCompletedCount = alreadyCompleted
+}
+
+func (j *Job) AddOCRCompleted(n int) {
+	if n <= 0 {
+		return
+	}
+	j.OCRCompletedCount += n
 }

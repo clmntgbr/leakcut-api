@@ -52,6 +52,7 @@ type Config struct {
 	FrameConcurrency        int
 	FrameExtractionTimeout  time.Duration
 	FrameMaxWidthPx         int
+	FrameUploadConcurrency  int
 	ExpireUploadsInterval   time.Duration
 	VideoMaxSizeBytes       int64
 	OCRQueue                string
@@ -115,11 +116,12 @@ func Load() *Config {
 		FrameRoutingKey:         getEnvOrDefault("FRAME_ROUTING_KEY", "video.uploaded.v1"),
 		FrameConcurrency:        getEnvIntOrDefault("FRAME_CONCURRENCY", 2),
 		FrameExtractionTimeout:  getEnvDuration("FRAME_EXTRACTION_TIMEOUT", 10*time.Minute),
-		FrameMaxWidthPx:         getEnvIntOrDefault("FRAME_MAX_WIDTH_PX", 1280),
+		FrameMaxWidthPx:         getEnvIntOrDefault("FRAME_MAX_WIDTH_PX", 960),
+		FrameUploadConcurrency:  getEnvIntOrDefault("FRAME_UPLOAD_CONCURRENCY", 4),
 		ExpireUploadsInterval:   getEnvDuration("EXPIRE_UPLOADS_INTERVAL", time.Minute),
 		VideoMaxSizeBytes:       getEnvInt64OrDefault("VIDEO_MAX_SIZE_BYTES", 2*1024*1024*1024),
 		OCRQueue:                getEnvOrDefault("OCR_QUEUE", "ocr"),
-		OCRRoutingKey:           getEnvOrDefault("OCR_ROUTING_KEY", "video.ocr_frame_requested.v1"),
+		OCRRoutingKey:           getEnvOrDefault("OCR_ROUTING_KEY", "video.frames_extracted.v1"),
 		OCRMinConfidence:        getEnvFloatOrDefault("OCR_MIN_CONFIDENCE", 0.5),
 		OCRLang:                 getEnvOrDefault("OCR_LANG", "fr+en"),
 		ClassifyQueue:           getEnvOrDefault("CLASSIFY_QUEUE", "classify"),

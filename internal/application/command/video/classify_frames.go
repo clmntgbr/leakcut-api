@@ -71,7 +71,7 @@ func (h *ClassifyFramesHandler) Handle(ctx context.Context, cmd ClassifyFramesCo
 	if err != nil {
 		return err
 	}
-	if job.Status == domainjob.StatusClassified || video.Status == domainvideo.StatusClassified {
+	if job.Status == domainjob.StatusSuccess || video.Status == domainvideo.StatusClassified {
 		return nil
 	}
 
@@ -133,12 +133,12 @@ func (h *ClassifyFramesHandler) load(ctx context.Context, videoID uuid.UUID) (*d
 		return nil, nil, nil, messaging.NonRetryable(domainvideo.ErrVideoNotFound)
 	}
 
-	extractJob, err := h.jobRepo.GetByVideoIDAndType(ctx, video.ID, domainjob.TypeExtractFrames)
+	extractJob, err := h.jobRepo.GetByVideoIDAndType(ctx, video.ID, domainjob.TypeFrame)
 	if err != nil {
 		return nil, nil, nil, messaging.Retryable(err)
 	}
 	if extractJob == nil {
-		return nil, nil, nil, messaging.NonRetryable(errors.New("extract frames job not found"))
+		return nil, nil, nil, messaging.NonRetryable(errors.New("frame job not found"))
 	}
 
 	job, err := h.jobRepo.GetByVideoIDAndType(ctx, video.ID, domainjob.TypeClassify)
@@ -155,7 +155,8 @@ func (h *ClassifyFramesHandler) load(ctx context.Context, videoID uuid.UUID) (*d
 }
 
 func (h *ClassifyFramesHandler) markProcessing(ctx context.Context, video *domainvideo.Video, job *domainjob.Job, expected int) error {
-	job.MarkClassifying(expected)
+	job.SetExpectedFrameCount(expected)
+	job.MarkProcessing()
 	if err := video.MarkClassifying(job.ID, job.Type, job.Status, expected); err != nil {
 		return messaging.NonRetryable(err)
 	}
@@ -209,7 +210,7 @@ func (h *ClassifyFramesHandler) failOrRetry(
 }
 
 func (h *ClassifyFramesHandler) markFailed(ctx context.Context, video *domainvideo.Video, job *domainjob.Job, reason string) error {
-	job.MarkClassifyFailed(reason)
+	job.MarkFailed(reason)
 	if err := video.MarkClassifyFailed(job.ID, job.Type, job.Status, reason, job.ExpectedFrameCount); err != nil {
 		return err
 	}
@@ -233,7 +234,7 @@ func (h *ClassifyFramesHandler) markReady(
 	job *domainjob.Job,
 	items []*domainclassification.Classification,
 ) error {
-	job.MarkClassified()
+	job.MarkSuccess()
 	if err := video.MarkClassified(job.ID, job.Type, job.Status, job.ExpectedFrameCount, toClassificationPayloads(items)); err != nil {
 		return err
 	}

@@ -28,12 +28,28 @@ func (r *frameWriteRepository) UpsertAll(ctx context.Context, frames []*domainfr
 		rows = append(rows, *frameModelFromDomain(f))
 	}
 
-	return DBWithContext(ctx, r.db).
-		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "video_id"}, {Name: "index"}},
-			DoUpdates: clause.AssignmentColumns([]string{"timestamp_ms", "storage_key", "selection_reason", "phash_distance"}),
-		}).
-		Create(&rows).Error
+	if err := DBWithContext(ctx, r.db).
+		Clauses(
+			clause.OnConflict{
+				Columns:   []clause.Column{{Name: "video_id"}, {Name: "index"}},
+				DoUpdates: clause.AssignmentColumns([]string{"timestamp_ms", "storage_key", "selection_reason", "phash_distance"}),
+			},
+			clause.Returning{Columns: []clause.Column{{Name: "id"}, {Name: "index"}}},
+		).
+		Create(&rows).Error; err != nil {
+		return err
+	}
+
+	byIndex := make(map[int]uuid.UUID, len(rows))
+	for i := range rows {
+		byIndex[rows[i].Index] = rows[i].ID
+	}
+	for _, frame := range frames {
+		if id, ok := byIndex[frame.Index]; ok {
+			frame.ID = id
+		}
+	}
+	return nil
 }
 
 func (r *frameWriteRepository) ListByVideoID(ctx context.Context, videoID uuid.UUID) ([]*domainframe.Frame, error) {

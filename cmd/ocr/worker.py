@@ -3,6 +3,7 @@ import logging
 import os
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any
 
@@ -16,6 +17,7 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger("RapidOCR").setLevel(logging.ERROR)
 
 READY_FLAG = "/tmp/ocr-ready"
+RESULT_BATCH_SIZE = 16
 
 
 def env(name: str, default: str = "") -> str:
@@ -25,7 +27,7 @@ def env(name: str, default: str = "") -> str:
 def declare_topology(channel: pika.channel.Channel) -> tuple[str, str]:
     exchange = env("RABBITMQ_EXCHANGE", "domain.events")
     queue = env("OCR_QUEUE", "ocr")
-    routing_key = env("OCR_ROUTING_KEY", "video.ocr_frame_requested.v1")
+    routing_key = env("OCR_ROUTING_KEY", "video.frames_extracted.v1")
     retry_ttl = int(env("RABBITMQ_RETRY_TTL_MS", "30000"))
     retry_queue = f"{queue}.retry"
     dlq = f"{queue}.dlq"
@@ -41,10 +43,11 @@ def declare_topology(channel: pika.channel.Channel) -> tuple[str, str]:
             "x-dead-letter-routing-key": "retry",
         },
     )
-    try:
-        channel.queue_unbind(queue=queue, exchange=exchange, routing_key="video.frames_extracted.v1")
-    except Exception:
-        pass
+    for legacy in ("video.ocr_frame_requested.v1",):
+        try:
+            channel.queue_unbind(queue=queue, exchange=exchange, routing_key=legacy)
+        except Exception:
+            pass
     channel.queue_bind(queue=queue, exchange=exchange, routing_key=routing_key)
     channel.queue_bind(queue=queue, exchange=dlx, routing_key="main")
     channel.queue_declare(
@@ -108,6 +111,8 @@ def ocr_frame(s3, bucket: str, frame: dict[str, Any]) -> dict[str, Any]:
 
 
 def publish_batch(channel: pika.channel.Channel, exchange: str, video_id: str, results: list[dict[str, Any]]) -> None:
+    if not results:
+        return
     event_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
     envelope = {
@@ -134,29 +139,32 @@ def publish_batch(channel: pika.channel.Channel, exchange: str, video_id: str, r
     )
 
 
-def process_frame(channel: pika.channel.Channel, exchange: str, s3, payload: dict[str, Any]) -> None:
+def process_video(channel: pika.channel.Channel, exchange: str, s3, payload: dict[str, Any]) -> None:
     video_id = payload.get("videoId") or ""
-    frame = {
-        "id": payload.get("frameId") or payload.get("id") or "",
-        "index": payload.get("index", 0),
-        "timestampMs": payload.get("timestampMs", 0),
-        "storageKey": payload.get("storageKey") or "",
-    }
+    frames = payload.get("frames") or []
     bucket = env("STORAGE_BUCKET", "media")
+    workers = env_int("OCR_INFER_CONCURRENCY", 2)
     logger.info(
-        "ocr worker processing video=%s frameId=%s index=%s",
+        "ocr worker processing video=%s frames=%s concurrency=%s",
         video_id,
-        frame["id"],
-        frame["index"],
+        len(frames),
+        workers,
     )
-    result = ocr_frame(s3, bucket, frame)
-    publish_batch(channel, exchange, video_id, [result])
-    logger.info(
-        "ocr worker finished video=%s frameId=%s status=%s",
-        video_id,
-        frame["id"],
-        result.get("status"),
-    )
+    if not frames:
+        logger.info("ocr worker finished video=%s frames=0", video_id)
+        return
+
+    results: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(ocr_frame, s3, bucket, frame) for frame in frames]
+        for future in as_completed(futures):
+            results.append(future.result())
+            if len(results) >= RESULT_BATCH_SIZE:
+                publish_batch(channel, exchange, video_id, results)
+                results = []
+    if results:
+        publish_batch(channel, exchange, video_id, results)
+    logger.info("ocr worker finished video=%s frames=%s", video_id, len(frames))
 
 
 def on_message(
@@ -174,30 +182,29 @@ def on_message(
         if isinstance(payload, str):
             payload = json.loads(payload)
         video_id = payload.get("videoId") or envelope.get("aggregateId") or ""
-        frame_id = payload.get("frameId") or payload.get("id") or ""
         logger.info(
-            "ocr worker received event type=%s videoId=%s frameId=%s",
+            "ocr worker received event type=%s videoId=%s frames=%s",
             event_type,
             video_id,
-            frame_id,
+            len(payload.get("frames") or []),
         )
-        if event_type == "video.frames_extracted.v1" or payload.get("frames"):
+        if event_type == "video.ocr_frame_requested.v1":
             logger.info(
-                "ocr worker skip batch event type=%s videoId=%s — waiting for per-frame messages",
+                "ocr worker skip legacy per-frame event type=%s videoId=%s",
                 event_type,
                 video_id,
             )
             channel.basic_ack(delivery_tag=method.delivery_tag)
             return
-        if not (payload.get("storageKey") and frame_id):
+        if event_type != "video.frames_extracted.v1" and not payload.get("frames"):
             logger.warning(
-                "ocr worker skip event without frameId/storageKey type=%s videoId=%s",
+                "ocr worker skip unexpected event type=%s videoId=%s",
                 event_type,
                 video_id,
             )
             channel.basic_ack(delivery_tag=method.delivery_tag)
             return
-        process_frame(channel, exchange, s3, payload)
+        process_video(channel, exchange, s3, payload)
         channel.basic_ack(delivery_tag=method.delivery_tag)
     except Exception:
         logger.exception("ocr worker failed, sending to retry")
@@ -217,7 +224,7 @@ def consume() -> None:
     with open(READY_FLAG, "w", encoding="utf-8") as handle:
         handle.write("ok")
 
-    logger.info("ocr worker consuming queue=%s", queue)
+    logger.info("ocr worker consuming queue=%s routing=%s", queue, env("OCR_ROUTING_KEY", "video.frames_extracted.v1"))
     channel.basic_consume(
         queue=queue,
         on_message_callback=lambda ch, method, props, body: on_message(

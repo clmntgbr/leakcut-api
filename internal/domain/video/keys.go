@@ -36,7 +36,7 @@ func NewStorageKey(videoID uuid.UUID) string {
 }
 
 func NewFrameStorageKey(videoID uuid.UUID, index int) string {
-	return fmt.Sprintf("frames/%s/frame_%06d.png", videoID.String(), index)
+	return fmt.Sprintf("frames/%s/frame_%06d.jpg", videoID.String(), index)
 }
 
 func NewThumbnailStorageKey(videoID uuid.UUID) string {

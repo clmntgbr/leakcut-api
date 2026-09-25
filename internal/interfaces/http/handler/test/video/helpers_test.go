@@ -101,7 +101,7 @@ func sampleVideoView() *domainvideo.VideoView {
 		FrameCount:       0,
 		Jobs: []domainvideo.JobView{{
 			ID:     jobID,
-			Type:   "extract_frames",
+			Type:   "frame",
 			Status: "pending",
 		}},
 		Frames: []domainvideo.VideoFrameDetailView{},
