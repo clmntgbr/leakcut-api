@@ -10,12 +10,12 @@ Decide whether each frame’s OCR text looks confidential. The `classify` worker
 | `jev` | Vercel AI Gateway `typesafe-ai/jev` |
 
 ```
-video.ocr_batch_completed.v1 → persist OCR
+video.ocr_frame_completed.v1 → persist OCR
      → outbox video.classify_frame_requested.v1 × N
      → queue classify (competing consumers) → skip empty text / run engine
      → upsert classification
      → when extract + all OCR + all classifications done
-       → retention → video.frames_classified.v1
+       → video.frames_classified.v1
 ```
 
 `video.frames_ocr_completed.v1` is also bound for a finalize catch-up (race when the last OCR row lands after the last classify).

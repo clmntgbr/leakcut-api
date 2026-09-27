@@ -89,7 +89,7 @@ func (h *ExtractFramesHandler) Handle(ctx context.Context, cmd ExtractFramesComm
 	if job.Status == domainjob.StatusSuccess {
 		return nil
 	}
-	if video.Status == domainvideo.StatusExtractionFailed {
+	if video.Status == domainvideo.StatusFailed {
 		return nil
 	}
 	if segment.Status == domainsegment.StatusSuccess {
@@ -371,7 +371,6 @@ func (h *ExtractFramesHandler) completeSegment(
 		completed int
 		expected  int
 	)
-	frameCount := len(frames)
 
 	err := h.videoRepo.WithTransaction(ctx, func(txCtx context.Context) error {
 		current, err := h.segmentRepo.GetByID(txCtx, segment.ID)
@@ -405,26 +404,15 @@ func (h *ExtractFramesHandler) completeSegment(
 			allDone = expected > 0 && completed >= expected
 		}
 
-		video.RecordSegmentFramesExtracted(
-			job.ID,
-			segment.ID,
-			segment.SegmentIndex,
-			frameCount,
-			job.ExpectedSegmentCount,
-			job.CompletedSegmentCount,
-		)
-
 		ocrJob, err := h.jobRepo.GetByVideoIDAndType(txCtx, video.ID, domainjob.TypeOCR)
 		if err != nil {
 			return err
 		}
 		if ocrJob == nil {
-			ocrJob = domainjob.NewOCRJob(video.ID)
-			if err := h.jobRepo.Save(txCtx, ocrJob); err != nil {
+			if err := h.jobRepo.Save(txCtx, domainjob.NewOCRJob(video.ID)); err != nil {
 				return err
 			}
 		}
-		_ = ocrJob
 
 		if allDone && job.Status != domainjob.StatusSuccess {
 			listed, err := h.frameRepo.ListByVideoID(txCtx, video.ID)

@@ -44,7 +44,7 @@ func NewPresignedVideo(userID uuid.UUID, filename, contentType string, sizeBytes
 		StorageKey:       NewStorageKey(id),
 		SizeBytes:        sizeBytes,
 		ContentType:      ContentTypeFromFilename(filename, contentType),
-		Status:           StatusPendingUpload,
+		Status:           StatusPending,
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
@@ -69,7 +69,7 @@ func NewWebhookVideo(filename, contentType, remoteURL string, sizeBytes int64) (
 		StorageKey:       NewStorageKey(id),
 		SizeBytes:        sizeBytes,
 		ContentType:      ContentTypeFromFilename(filename, contentType),
-		Status:           StatusPendingUpload,
+		Status:           StatusPending,
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
@@ -114,16 +114,17 @@ func (v *Video) ownerUserID() string {
 }
 
 func (v *Video) MarkUploaded(contentType string, sizeBytes int64) error {
+	if contentType != "" {
+		v.ContentType = contentType
+	}
+	if sizeBytes > 0 {
+		v.SizeBytes = sizeBytes
+	}
+
 	switch v.Status {
-	case StatusPendingUpload:
+	case StatusPending:
 		now := time.Now().UTC()
-		if contentType != "" {
-			v.ContentType = contentType
-		}
-		if sizeBytes > 0 {
-			v.SizeBytes = sizeBytes
-		}
-		v.Status = StatusExtractionQueued
+		v.Status = StatusProcessing
 		v.UpdatedAt = now
 		v.recordEvent(VideoUploaded{
 			ID:          uuid.New().String(),
@@ -136,15 +137,7 @@ func (v *Video) MarkUploaded(contentType string, sizeBytes int64) error {
 			Timestamp:   now,
 		})
 		return nil
-	case StatusUploaded, StatusExtractionQueued, StatusExtracting, StatusFramesReady,
-		StatusOCRProcessing, StatusOCRReady, StatusOCRFailed,
-		StatusClassifying, StatusClassified, StatusClassifyFailed:
-		if contentType != "" {
-			v.ContentType = contentType
-		}
-		if sizeBytes > 0 {
-			v.SizeBytes = sizeBytes
-		}
+	case StatusProcessing, StatusSuccess:
 		v.UpdatedAt = time.Now().UTC()
 		return nil
 	default:
@@ -154,13 +147,11 @@ func (v *Video) MarkUploaded(contentType string, sizeBytes int64) error {
 
 func (v *Video) MarkExtractionQueued() error {
 	switch v.Status {
-	case StatusUploaded:
-		v.Status = StatusExtractionQueued
+	case StatusPending:
+		v.Status = StatusProcessing
 		v.UpdatedAt = time.Now().UTC()
 		return nil
-	case StatusExtractionQueued, StatusExtracting, StatusFramesReady, StatusExtractionFailed,
-		StatusOCRProcessing, StatusOCRReady, StatusOCRFailed,
-		StatusClassifying, StatusClassified, StatusClassifyFailed:
+	case StatusProcessing, StatusSuccess, StatusFailed:
 		return nil
 	default:
 		return ErrInvalidTransition
@@ -169,9 +160,9 @@ func (v *Video) MarkExtractionQueued() error {
 
 func (v *Video) MarkExtracting(jobID uuid.UUID, jobType, jobStatus string) error {
 	switch v.Status {
-	case StatusUploaded, StatusExtractionQueued, StatusExtractionFailed:
+	case StatusPending, StatusProcessing, StatusFailed:
 		now := time.Now().UTC()
-		v.Status = StatusExtracting
+		v.Status = StatusProcessing
 		v.UpdatedAt = now
 		v.recordEvent(VideoExtracting{
 			ID:        uuid.New().String(),
@@ -184,7 +175,7 @@ func (v *Video) MarkExtracting(jobID uuid.UUID, jobType, jobStatus string) error
 			Timestamp: now,
 		})
 		return nil
-	case StatusExtracting:
+	case StatusSuccess:
 		return nil
 	default:
 		return ErrInvalidTransition
@@ -211,29 +202,11 @@ func (v *Video) RecordSegmentReady(
 	})
 }
 
-func (v *Video) RecordSegmentFramesExtracted(
-	jobID, segmentID uuid.UUID,
-	segmentIndex, frameCount, expectedSegments, completedSegments int,
-) {
-	v.recordEvent(VideoSegmentFramesExtracted{
-		ID:                    uuid.New().String(),
-		VideoID:               v.ID.String(),
-		UserID:                v.ownerUserID(),
-		JobID:                 jobID.String(),
-		SegmentID:             segmentID.String(),
-		SegmentIndex:          segmentIndex,
-		FrameCount:            frameCount,
-		ExpectedSegmentCount:  expectedSegments,
-		CompletedSegmentCount: completedSegments,
-		Timestamp:             time.Now().UTC(),
-	})
-}
-
 func (v *Video) MarkFramesReady(jobID uuid.UUID, jobType, jobStatus string, frames []ExtractedFramePayload) error {
 	switch v.Status {
-	case StatusExtracting, StatusExtractionQueued, StatusUploaded:
+	case StatusProcessing, StatusPending:
 		now := time.Now().UTC()
-		v.Status = StatusFramesReady
+		v.Status = StatusProcessing
 		v.UpdatedAt = now
 		v.recordEvent(VideoFramesExtracted{
 			ID:         uuid.New().String(),
@@ -248,24 +221,7 @@ func (v *Video) MarkFramesReady(jobID uuid.UUID, jobType, jobStatus string, fram
 			Timestamp:  now,
 		})
 		return nil
-	case StatusOCRProcessing, StatusOCRReady, StatusClassifying, StatusClassified:
-		// Extract finished while OCR/classify already running — emit without regressing status.
-		now := time.Now().UTC()
-		v.UpdatedAt = now
-		v.recordEvent(VideoFramesExtracted{
-			ID:         uuid.New().String(),
-			VideoID:    v.ID.String(),
-			UserID:     v.ownerUserID(),
-			JobID:      jobID.String(),
-			JobType:    jobType,
-			Status:     v.Status,
-			JobStatus:  jobStatus,
-			FrameCount: len(frames),
-			Frames:     frames,
-			Timestamp:  now,
-		})
-		return nil
-	case StatusFramesReady:
+	case StatusSuccess:
 		return nil
 	default:
 		return ErrInvalidTransition
@@ -274,15 +230,15 @@ func (v *Video) MarkFramesReady(jobID uuid.UUID, jobType, jobStatus string, fram
 
 func (v *Video) MarkExtractionFailed(jobID uuid.UUID, jobType, jobStatus, reason string) error {
 	switch v.Status {
-	case StatusExtracting, StatusExtractionQueued, StatusUploaded, StatusOCRProcessing, StatusClassifying:
-	case StatusExtractionFailed:
+	case StatusProcessing, StatusPending:
+	case StatusFailed:
 		return nil
 	default:
 		return ErrInvalidTransition
 	}
 
 	now := time.Now().UTC()
-	v.Status = StatusExtractionFailed
+	v.Status = StatusFailed
 	v.UpdatedAt = now
 	v.recordEvent(VideoFrameExtractionFailed{
 		ID:        uuid.New().String(),
@@ -308,9 +264,9 @@ func (v *Video) SetThumbnailKey(key string) {
 
 func (v *Video) MarkOCRProcessing(jobID uuid.UUID, jobType, jobStatus string, expected, completed int) error {
 	switch v.Status {
-	case StatusExtracting, StatusExtractionQueued, StatusFramesReady, StatusOCRFailed:
+	case StatusProcessing, StatusPending, StatusFailed:
 		now := time.Now().UTC()
-		v.Status = StatusOCRProcessing
+		v.Status = StatusProcessing
 		v.UpdatedAt = now
 		v.recordEvent(VideoOCRProcessing{
 			ID:                 uuid.New().String(),
@@ -325,7 +281,7 @@ func (v *Video) MarkOCRProcessing(jobID uuid.UUID, jobType, jobStatus string, ex
 			Timestamp:          now,
 		})
 		return nil
-	case StatusOCRProcessing, StatusOCRReady, StatusClassifying, StatusClassified:
+	case StatusSuccess:
 		return nil
 	default:
 		return ErrInvalidTransition
@@ -374,7 +330,7 @@ func (v *Video) RequestClassifyFrames(jobID uuid.UUID, frameIDs []uuid.UUID) {
 }
 
 func (v *Video) RecordOCRProgress(jobID uuid.UUID, jobType, jobStatus string, expected, completed int) error {
-	if v.Status != StatusOCRProcessing {
+	if v.Status != StatusProcessing {
 		return nil
 	}
 
@@ -396,14 +352,12 @@ func (v *Video) RecordOCRProgress(jobID uuid.UUID, jobType, jobStatus string, ex
 }
 
 func (v *Video) MarkOCRReady(jobID uuid.UUID, jobType, jobStatus string, expected, completed int, results []OCRFrameResultPayload) error {
-	now := time.Now().UTC()
 	switch v.Status {
-	case StatusOCRProcessing, StatusFramesReady:
-		v.Status = StatusOCRReady
+	case StatusProcessing, StatusPending:
+		now := time.Now().UTC()
+		v.Status = StatusProcessing
 		v.UpdatedAt = now
-	case StatusClassifying, StatusClassified:
-		v.UpdatedAt = now
-	case StatusOCRReady:
+	case StatusSuccess:
 		return nil
 	default:
 		return ErrInvalidTransition
@@ -420,22 +374,22 @@ func (v *Video) MarkOCRReady(jobID uuid.UUID, jobType, jobStatus string, expecte
 		ExpectedFrameCount: expected,
 		OCRCompletedCount:  completed,
 		Results:            results,
-		Timestamp:          now,
+		Timestamp:          time.Now().UTC(),
 	})
 	return nil
 }
 
 func (v *Video) MarkOCRFailed(jobID uuid.UUID, jobType, jobStatus, reason string, expected, completed int) error {
 	switch v.Status {
-	case StatusOCRProcessing, StatusFramesReady:
-	case StatusOCRFailed:
+	case StatusProcessing, StatusPending:
+	case StatusFailed:
 		return nil
 	default:
 		return ErrInvalidTransition
 	}
 
 	now := time.Now().UTC()
-	v.Status = StatusOCRFailed
+	v.Status = StatusFailed
 	v.UpdatedAt = now
 	v.recordEvent(VideoOCRFailed{
 		ID:                 uuid.New().String(),
@@ -455,9 +409,9 @@ func (v *Video) MarkOCRFailed(jobID uuid.UUID, jobType, jobStatus, reason string
 
 func (v *Video) MarkClassifying(jobID uuid.UUID, jobType, jobStatus string, expected int) error {
 	switch v.Status {
-	case StatusExtracting, StatusExtractionQueued, StatusOCRProcessing, StatusOCRReady, StatusFramesReady, StatusClassifyFailed:
+	case StatusProcessing, StatusPending, StatusFailed:
 		now := time.Now().UTC()
-		v.Status = StatusClassifying
+		v.Status = StatusProcessing
 		v.UpdatedAt = now
 		v.recordEvent(VideoClassifying{
 			ID:                 uuid.New().String(),
@@ -471,7 +425,7 @@ func (v *Video) MarkClassifying(jobID uuid.UUID, jobType, jobStatus string, expe
 			Timestamp:          now,
 		})
 		return nil
-	case StatusClassifying, StatusClassified:
+	case StatusSuccess:
 		return nil
 	default:
 		return ErrInvalidTransition
@@ -480,15 +434,15 @@ func (v *Video) MarkClassifying(jobID uuid.UUID, jobType, jobStatus string, expe
 
 func (v *Video) MarkClassified(jobID uuid.UUID, jobType, jobStatus string, expected int, classifications []ClassificationPayload) error {
 	switch v.Status {
-	case StatusClassifying, StatusOCRReady, StatusOCRProcessing, StatusFramesReady, StatusExtracting:
-	case StatusClassified:
+	case StatusProcessing, StatusPending:
+	case StatusSuccess:
 		return nil
 	default:
 		return ErrInvalidTransition
 	}
 
 	now := time.Now().UTC()
-	v.Status = StatusClassified
+	v.Status = StatusSuccess
 	v.UpdatedAt = now
 	v.FinishedAt = &now
 	v.recordEvent(VideoFramesClassified{
@@ -508,15 +462,15 @@ func (v *Video) MarkClassified(jobID uuid.UUID, jobType, jobStatus string, expec
 
 func (v *Video) MarkClassifyFailed(jobID uuid.UUID, jobType, jobStatus, reason string, expected int) error {
 	switch v.Status {
-	case StatusClassifying, StatusOCRReady, StatusOCRProcessing, StatusFramesReady:
-	case StatusClassifyFailed:
+	case StatusProcessing, StatusPending:
+	case StatusFailed:
 		return nil
 	default:
 		return ErrInvalidTransition
 	}
 
 	now := time.Now().UTC()
-	v.Status = StatusClassifyFailed
+	v.Status = StatusFailed
 	v.UpdatedAt = now
 	v.recordEvent(VideoClassifyFailed{
 		ID:                 uuid.New().String(),
@@ -534,11 +488,11 @@ func (v *Video) MarkClassifyFailed(jobID uuid.UUID, jobType, jobStatus, reason s
 }
 
 func (v *Video) MarkUploadExpired() error {
-	if v.Status != StatusPendingUpload {
+	if v.Status != StatusPending {
 		return ErrInvalidTransition
 	}
 	now := time.Now().UTC()
-	v.Status = StatusUploadExpired
+	v.Status = StatusFailed
 	v.UpdatedAt = now
 	v.recordEvent(VideoUploadExpired{
 		ID:        uuid.New().String(),

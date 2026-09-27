@@ -16,11 +16,7 @@ import (
 	"github.com/google/uuid"
 )
 
-type StartOCRFramesCommand struct {
-	VideoID uuid.UUID
-}
-
-type PersistOCRBatchCommand struct {
+type PersistOCRFrameCommand struct {
 	VideoID uuid.UUID
 	Results []domainvideo.OCRFrameResultPayload
 }
@@ -52,45 +48,12 @@ func NewOCRFramesHandler(
 	}
 }
 
-func (h *OCRFramesHandler) Start(ctx context.Context, cmd StartOCRFramesCommand) error {
-	video, job, _, err := h.load(ctx, cmd.VideoID)
-	if err != nil {
-		return err
-	}
-	if job.Status == domainjob.StatusSuccess || video.Status == domainvideo.StatusOCRReady {
-		return nil
-	}
-
-	frames, err := h.frameRepo.ListByVideoID(ctx, video.ID)
-	if err != nil {
-		return h.failOrRetry(ctx, video, job, err, "failed to load frames")
-	}
-
-	existing, err := h.ocrRepo.ListByFrameIDs(ctx, frameIDs(frames))
-	if err != nil {
-		return h.failOrRetry(ctx, video, job, err, "failed to load ocr")
-	}
-	known := resultsByFrame(existing)
-	pending := pendingOCRFrames(frames, known)
-	if err := h.markProcessing(ctx, video, job, len(frames), countFinal(existing), pending); err != nil {
-		return err
-	}
-	if len(frames) == 0 || len(pending) == 0 {
-		if err := h.markReady(ctx, video, job, frames, existing); err != nil {
-			return messaging.Retryable(err)
-		}
-	}
-	return nil
-}
-
-func (h *OCRFramesHandler) PersistBatch(ctx context.Context, cmd PersistOCRBatchCommand) error {
+func (h *OCRFramesHandler) PersistFrame(ctx context.Context, cmd PersistOCRFrameCommand) error {
 	video, job, extractJob, err := h.load(ctx, cmd.VideoID)
 	if err != nil {
 		return err
 	}
-	if job.Status == domainjob.StatusSuccess ||
-		video.Status == domainvideo.StatusOCRReady ||
-		video.Status == domainvideo.StatusClassified {
+	if job.Status == domainjob.StatusSuccess || video.Status == domainvideo.StatusSuccess {
 		return nil
 	}
 
@@ -106,17 +69,14 @@ func (h *OCRFramesHandler) PersistBatch(ctx context.Context, cmd PersistOCRBatch
 	known := resultsByFrame(existing)
 	extractDone := extractJob.Status == domainjob.StatusSuccess
 
-	if job.Status == domainjob.StatusPending ||
-		video.Status == domainvideo.StatusExtracting ||
-		video.Status == domainvideo.StatusExtractionQueued ||
-		video.Status == domainvideo.StatusFramesReady {
-		if err := h.markProcessing(ctx, video, job, len(frames), countFinal(existing), nil); err != nil {
+	if job.Status == domainjob.StatusPending {
+		if err := h.markProcessing(ctx, video, job, len(frames), countFinal(existing)); err != nil {
 			return err
 		}
 	}
 
 	incoming := h.normalizePayloads(cmd.Results)
-	if err := h.persistBatch(ctx, video, job, incoming, known); err != nil {
+	if err := h.persistResults(ctx, video, job, incoming, known); err != nil {
 		return h.failOrRetry(ctx, video, job, err, "failed to persist ocr")
 	}
 	if !extractDone {
@@ -171,14 +131,12 @@ func (h *OCRFramesHandler) markProcessing(
 	video *domainvideo.Video,
 	job *domainjob.Job,
 	expected, alreadyCompleted int,
-	pending []*domainframe.Frame,
 ) error {
 	job.SetOCRProgress(expected, alreadyCompleted)
 	job.MarkProcessing()
 	if err := video.MarkOCRProcessing(job.ID, job.Type, job.Status, expected, alreadyCompleted); err != nil {
 		return messaging.NonRetryable(err)
 	}
-	video.RequestOCRFrames(job.ID, toExtractedFramePayloads(pending))
 
 	err := h.videoRepo.WithTransaction(ctx, func(txCtx context.Context) error {
 		if err := h.videoRepo.Update(txCtx, video); err != nil {
@@ -195,7 +153,7 @@ func (h *OCRFramesHandler) markProcessing(
 	return nil
 }
 
-func (h *OCRFramesHandler) persistBatch(
+func (h *OCRFramesHandler) persistResults(
 	ctx context.Context,
 	video *domainvideo.Video,
 	job *domainjob.Job,
@@ -420,32 +378,6 @@ func countFinal(results []*domainocr.Result) int {
 		}
 	}
 	return n
-}
-
-func pendingOCRFrames(frames []*domainframe.Frame, known map[uuid.UUID]*domainocr.Result) []*domainframe.Frame {
-	out := make([]*domainframe.Frame, 0, len(frames))
-	for _, frame := range frames {
-		if _, ok := known[frame.ID]; ok {
-			continue
-		}
-		out = append(out, frame)
-	}
-	return out
-}
-
-func toExtractedFramePayloads(frames []*domainframe.Frame) []domainvideo.ExtractedFramePayload {
-	out := make([]domainvideo.ExtractedFramePayload, 0, len(frames))
-	for _, frame := range frames {
-		out = append(out, domainvideo.ExtractedFramePayload{
-			ID:              frame.ID.String(),
-			Index:           frame.Index,
-			TimestampMs:     frame.TimestampMs,
-			StorageKey:      frame.StorageKey,
-			SelectionReason: frame.SelectionReason,
-			PHashDistance:   frame.PHashDistance,
-		})
-	}
-	return out
 }
 
 func toOCRPayloads(frames []*domainframe.Frame, results []*domainocr.Result) []domainvideo.OCRFrameResultPayload {

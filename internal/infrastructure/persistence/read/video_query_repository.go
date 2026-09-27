@@ -181,23 +181,33 @@ func videoViewFromRow(row videoViewRow) *domainvideo.VideoView {
 		})
 	}
 
+	// First non-success job in pipeline order (segment → frame → ocr → classify).
 	currentID := row.SegmentJobID
 	currentStatus := row.SegmentJobStatus
 	failureReason := row.SegmentFailureReason
-	if row.ExtractJobID != nil {
+	switch {
+	case row.SegmentJobID != nil && row.SegmentJobStatus != domainjob.StatusSuccess:
+		// keep segment
+	case row.ExtractJobID != nil && row.ExtractJobStatus != domainjob.StatusSuccess:
 		currentID = row.ExtractJobID
 		currentStatus = row.ExtractJobStatus
 		failureReason = row.ExtractFailureReason
-	}
-	if row.OCRJobID != nil {
+	case row.OCRJobID != nil && row.OCRJobStatus != domainjob.StatusSuccess:
 		currentID = row.OCRJobID
 		currentStatus = row.OCRJobStatus
 		failureReason = row.OCRFailureReason
-	}
-	if row.ClassifyJobID != nil {
+	case row.ClassifyJobID != nil:
 		currentID = row.ClassifyJobID
 		currentStatus = row.ClassifyJobStatus
 		failureReason = row.ClassifyFailureReason
+	case row.OCRJobID != nil:
+		currentID = row.OCRJobID
+		currentStatus = row.OCRJobStatus
+		failureReason = row.OCRFailureReason
+	case row.ExtractJobID != nil:
+		currentID = row.ExtractJobID
+		currentStatus = row.ExtractJobStatus
+		failureReason = row.ExtractFailureReason
 	}
 
 	return &domainvideo.VideoView{

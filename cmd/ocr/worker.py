@@ -41,11 +41,6 @@ def declare_topology(channel: pika.channel.Channel) -> tuple[str, str]:
             "x-dead-letter-routing-key": "retry",
         },
     )
-    for legacy in ("video.frames_extracted.v1",):
-        try:
-            channel.queue_unbind(queue=queue, exchange=exchange, routing_key=legacy)
-        except Exception:
-            pass
     channel.queue_bind(queue=queue, exchange=exchange, routing_key=routing_key)
     channel.queue_bind(queue=queue, exchange=dlx, routing_key="main")
     channel.queue_declare(
@@ -108,14 +103,15 @@ def ocr_frame(s3, bucket: str, frame: dict[str, Any]) -> dict[str, Any]:
         }
 
 
-def publish_batch(channel: pika.channel.Channel, exchange: str, video_id: str, results: list[dict[str, Any]]) -> None:
+def publish_frame_completed(channel: pika.channel.Channel, exchange: str, video_id: str, results: list[dict[str, Any]]) -> None:
     if not results:
         return
     event_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
+    event_type = "video.ocr_frame_completed.v1"
     envelope = {
         "eventId": event_id,
-        "type": "video.ocr_batch_completed.v1",
+        "type": event_type,
         "aggregateId": video_id,
         "occurredAt": now.isoformat(),
         "payload": {
@@ -127,12 +123,12 @@ def publish_batch(channel: pika.channel.Channel, exchange: str, video_id: str, r
     }
     channel.basic_publish(
         exchange=exchange,
-        routing_key="video.ocr_batch_completed.v1",
+        routing_key=event_type,
         body=json.dumps(envelope).encode("utf-8"),
         properties=pika.BasicProperties(
             content_type="application/json",
             delivery_mode=2,
-            type="video.ocr_batch_completed.v1",
+            type=event_type,
         ),
     )
 
@@ -152,7 +148,7 @@ def process_frame(channel: pika.channel.Channel, exchange: str, s3, payload: dic
         frame["frameId"],
     )
     result = ocr_frame(s3, bucket, frame)
-    publish_batch(channel, exchange, video_id, [result])
+    publish_frame_completed(channel, exchange, video_id, [result])
     logger.info("ocr worker finished video=%s frame=%s", video_id, frame["frameId"])
 
 
@@ -177,14 +173,6 @@ def on_message(
             video_id,
             payload.get("frameId") or "",
         )
-        if event_type == "video.frames_extracted.v1":
-            logger.info(
-                "ocr worker skip legacy video-level event type=%s videoId=%s",
-                event_type,
-                video_id,
-            )
-            channel.basic_ack(delivery_tag=method.delivery_tag)
-            return
         if event_type != "video.ocr_frame_requested.v1":
             logger.warning(
                 "ocr worker skip unexpected event type=%s videoId=%s",

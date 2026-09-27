@@ -55,7 +55,7 @@ func (r *videoWriteRepository) UpdateThumbnailKey(ctx context.Context, id uuid.U
 func (r *videoWriteRepository) ListExpiredPending(ctx context.Context, cutoff time.Time) ([]*domainvideo.Video, error) {
 	var models []VideoModel
 	err := DBWithContext(ctx, r.db).
-		Where("status = ? AND created_at <= ?", domainvideo.StatusPendingUpload, cutoff).
+		Where("status = ? AND created_at <= ?", domainvideo.StatusPending, cutoff).
 		Find(&models).Error
 	if err != nil {
 		return nil, err

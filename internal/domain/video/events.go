@@ -8,12 +8,11 @@ const (
 	EventTypeVideoUploaded              = "video.uploaded.v1"
 	EventTypeVideoExtracting            = "video.extracting.v1"
 	EventTypeVideoSegmentReady          = "video.segment_ready.v1"
-	EventTypeVideoSegmentFramesExtracted = "video.segment_frames_extracted.v1"
 	EventTypeVideoFramesExtracted       = "video.frames_extracted.v1"
 	EventTypeVideoFrameExtractionFailed = "video.frame_extraction_failed.v1"
 	EventTypeVideoOCRProcessing         = "video.ocr_processing.v1"
 	EventTypeVideoOCRFrameRequested     = "video.ocr_frame_requested.v1"
-	EventTypeVideoOCRBatchCompleted     = "video.ocr_batch_completed.v1"
+	EventTypeVideoOCRFrameCompleted     = "video.ocr_frame_completed.v1"
 	EventTypeVideoFramesOCRCompleted    = "video.frames_ocr_completed.v1"
 	EventTypeVideoOCRFailed             = "video.ocr_failed.v1"
 	EventTypeVideoClassifying           = "video.classifying.v1"
@@ -101,24 +100,6 @@ func (e VideoSegmentReady) EventType() string     { return EventTypeVideoSegment
 func (e VideoSegmentReady) AggregateID() string   { return e.VideoID }
 func (e VideoSegmentReady) OccurredAt() time.Time { return e.Timestamp }
 
-type VideoSegmentFramesExtracted struct {
-	ID                    string    `json:"eventId"`
-	VideoID               string    `json:"videoId"`
-	UserID                string    `json:"userId,omitempty"`
-	JobID                 string    `json:"jobId"`
-	SegmentID             string    `json:"segmentId"`
-	SegmentIndex          int       `json:"segmentIndex"`
-	FrameCount            int       `json:"frameCount"`
-	ExpectedSegmentCount  int       `json:"expectedSegmentCount"`
-	CompletedSegmentCount int       `json:"completedSegmentCount"`
-	Timestamp             time.Time `json:"timestamp"`
-}
-
-func (e VideoSegmentFramesExtracted) EventID() string       { return e.ID }
-func (e VideoSegmentFramesExtracted) EventType() string     { return EventTypeVideoSegmentFramesExtracted }
-func (e VideoSegmentFramesExtracted) AggregateID() string   { return e.VideoID }
-func (e VideoSegmentFramesExtracted) OccurredAt() time.Time { return e.Timestamp }
-
 type ExtractedFramePayload struct {
 	ID              string `json:"id,omitempty"`
 	Index           int    `json:"index"`
@@ -198,17 +179,17 @@ func (e VideoOCRFrameRequested) EventType() string     { return EventTypeVideoOC
 func (e VideoOCRFrameRequested) AggregateID() string   { return e.VideoID }
 func (e VideoOCRFrameRequested) OccurredAt() time.Time { return e.Timestamp }
 
-type VideoOCRBatchCompleted struct {
+type VideoOCRFrameCompleted struct {
 	ID        string                  `json:"eventId"`
 	VideoID   string                  `json:"videoId"`
 	Results   []OCRFrameResultPayload `json:"results"`
 	Timestamp time.Time               `json:"timestamp"`
 }
 
-func (e VideoOCRBatchCompleted) EventID() string       { return e.ID }
-func (e VideoOCRBatchCompleted) EventType() string     { return EventTypeVideoOCRBatchCompleted }
-func (e VideoOCRBatchCompleted) AggregateID() string   { return e.VideoID }
-func (e VideoOCRBatchCompleted) OccurredAt() time.Time { return e.Timestamp }
+func (e VideoOCRFrameCompleted) EventID() string       { return e.ID }
+func (e VideoOCRFrameCompleted) EventType() string     { return EventTypeVideoOCRFrameCompleted }
+func (e VideoOCRFrameCompleted) AggregateID() string   { return e.VideoID }
+func (e VideoOCRFrameCompleted) OccurredAt() time.Time { return e.Timestamp }
 
 type OCRPointPayload struct {
 	X int `json:"x"`

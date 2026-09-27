@@ -13,9 +13,9 @@ Two ingest paths:
 client → POST /api/videos/upload-url → MinIO PUT
 MinIO → POST /webhooks/minio/object-created → outbox video.uploaded.v1
      → queue segment → plan/split → video.segment_ready.v1 × N
-     → queue frame → extract per segment → video.ocr_frame_requested.v1 × frames
-                  → when all segments done → video.frames_extracted.v1 (catch-up)
-     → queue ocr → one frame → video.ocr_batch_completed.v1
+     → queue frame → extract per segment → video.ocr_frame_requested.v1 × frames (immédiat)
+                  → when all segments done → video.frames_extracted.v1 (status only)
+     → queue ocr → one frame → video.ocr_frame_completed.v1
                   → classify_frame_requested.v1 × 1
      → queue classify → one frame → when all done → video.frames_classified.v1
 ```
@@ -32,20 +32,18 @@ MinIO → POST /webhooks/minio/object-created → outbox video.uploaded.v1
 
 ## Status
 
-`Video.Status` is the pipeline cursor. Each task has its own `Job` (`UNIQUE (video_id, type)`).
+Video and jobs share the same statuses: `pending` → `processing` → `success` / `failed`.
 
 | Video status | When |
 |--------------|------|
-| `pending_upload` | Presigned URL issued |
-| `extraction_queued` | Upload confirmed, `segment` job created |
-| `extracting` | `segment` worker splitting (then `frame` workers extract) |
-| `frames_ready` | Retained frames stored; OCR may already be running |
-| `extraction_failed` | Unreadable video / ffmpeg / timeout |
-| `upload_expired` | No PUT before the URL TTL |
+| `pending` | Presigned URL issued / waiting for upload |
+| `processing` | Upload confirmed; pipeline running |
+| `success` | Classify finished |
+| `failed` | Any job failed, or upload expired |
 
-Jobs use shared statuses (`pending` / `processing` / `success` / `failed`) plus `type` (`segment` / `frame` / `ocr` / `classify`). Each job exposes `createdAt`, `startedAt`, and `finishedAt` so clients can measure step duration (`finishedAt - startedAt`). The video itself has `finishedAt` when classify completes. Video statuses above are the pipeline cursor; later ones (`ocr_*`, `classifying`, `classified`) are in [ocr](ocr.md) and [classify](classify.md).
+Each task has its own `Job` (`UNIQUE (video_id, type)`): `segment` → `frame` → `ocr` → `classify`. `GET /api/videos/:id` exposes `jobStatus` / `jobId` for the **first job that is not yet `success`** (pipeline order). Use `jobs[]` + `jobType` for per-stage detail (`createdAt` / `startedAt` / `finishedAt`).
 
-`GET /api/videos/:id` embeds `jobs[]` and `frames[]`. Each frame carries `ocrText` / `ocrLines` (`box` in JPEG pixels) / `ocrStatus`, optional `classification`, plus `retained` / `pruneReason` after classify ([retention](retention.md)). Presigned `videoUrl`, `thumbnailUrl`, and `imageUrl` expire with the storage TTL; pruned frames have `imageUrl: null`.
+`GET /api/videos/:id` also embeds `frames[]`. Each frame carries `ocrText` / `ocrLines` (`box` in JPEG pixels) / `ocrStatus`, optional `classification`. All frame images are kept. Presigned `videoUrl`, `thumbnailUrl`, and `imageUrl` expire with the storage TTL.
 
 ## Frame selection
 
@@ -63,7 +61,7 @@ Only retained JPEGs are stored. Same pixels for MinIO, OCR, and `GET /videos/:id
 
 ## Per-frame publish
 
-ffmpeg streams JPEGs (`image2pipe` / mjpeg). Each retained frame is uploaded (pool of `FRAME_UPLOAD_CONCURRENCY`) and upserted in Postgres — **no outbox per frame**. When extraction finishes, one `video.frames_extracted.v1` carries the retained list and `frameCount`.
+ffmpeg streams JPEGs (`image2pipe` / mjpeg). Each retained frame is uploaded (pool of `FRAME_UPLOAD_CONCURRENCY`), upserted, then immediately enqueued as `video.ocr_frame_requested.v1`. When all segments finish, one `video.frames_extracted.v1` marks extract complete (realtime) — it does not trigger OCR.
 
 OCR starts from that video-level event (see [ocr](ocr.md)).
 

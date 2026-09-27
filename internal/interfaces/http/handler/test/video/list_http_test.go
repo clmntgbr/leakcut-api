@@ -62,7 +62,7 @@ func TestVideoHandler_List_Success(t *testing.T) {
 	if item["id"] != testutil.TestVideoID.String() {
 		t.Fatalf("id: got %v", item["id"])
 	}
-	if item["status"] != domainvideo.StatusFramesReady {
+	if item["status"] != domainvideo.StatusProcessing {
 		t.Fatalf("status: got %v", item["status"])
 	}
 	if _, exists := item["storageKey"]; exists {

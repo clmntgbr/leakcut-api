@@ -198,7 +198,7 @@ func TestVideoHandler_GetByID_Success(t *testing.T) {
 	if out.ID != testutil.TestVideoID.String() {
 		t.Fatalf("id: got %s", out.ID)
 	}
-	if out.Status != domainvideo.StatusPendingUpload {
+	if out.Status != domainvideo.StatusPending {
 		t.Fatalf("status: got %s", out.Status)
 	}
 	if out.ThumbnailKey == nil || *out.ThumbnailKey != domainvideo.NewThumbnailStorageKey(testutil.TestVideoID) {
@@ -232,7 +232,7 @@ func TestVideoHandler_GetByID_Success(t *testing.T) {
 
 func TestVideoHandler_GetByID_Success_WithClassifications(t *testing.T) {
 	view := sampleVideoView()
-	view.Status = domainvideo.StatusClassified
+	view.Status = domainvideo.StatusSuccess
 	view.FrameCount = 1
 	view.Frames = []domainvideo.VideoFrameDetailView{{
 		ID:              testutil.TestFrameID,
@@ -324,7 +324,7 @@ func TestVideoHandler_GetByID_Success_WithClassifications(t *testing.T) {
 
 func TestVideoHandler_GetByID_Success_WithOCRJob(t *testing.T) {
 	view := sampleVideoView()
-	view.Status = domainvideo.StatusOCRProcessing
+	view.Status = domainvideo.StatusProcessing
 	view.JobID = &testutil.TestOCRJobID
 	view.JobStatus = "processing"
 	view.ExpectedFrameCount = 12

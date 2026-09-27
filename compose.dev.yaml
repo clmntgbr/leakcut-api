@@ -130,11 +130,10 @@ services:
       start_period: 60s
     environment:
       OCR_LANG: ${OCR_LANG:-fr+en}
-      OCR_QUEUE: ${OCR_QUEUE:-ocr}
-      OCR_ROUTING_KEY: ${OCR_ROUTING_KEY:-video.ocr_frame_requested.v1}
+      OCR_QUEUE: ocr
+      OCR_ROUTING_KEY: video.ocr_frame_requested.v1
       OCR_INFER_CONCURRENCY: ${OCR_INFER_CONCURRENCY:-2}
       OCR_INTRA_OP_THREADS: ${OCR_INTRA_OP_THREADS:-2}
-      OCR_BATCH_SIZE: ${OCR_BATCH_SIZE:-8}
       OCR_CONCURRENCY: ${OCR_CONCURRENCY:-2}
     depends_on:
       rabbitmq:
@@ -159,6 +158,8 @@ services:
       - .env
     environment:
       CLASSIFY_ENGINE: ${CLASSIFY_ENGINE:-local}
+      CLASSIFY_QUEUE: classify
+      CLASSIFY_ROUTING_KEY: video.classify_frame_requested.v1,video.frames_ocr_completed.v1
     depends_on:
       database:
         condition: service_healthy
@@ -192,11 +193,12 @@ services:
     container_name: broker
     image: rabbitmq:3.13-management-alpine
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+      # ping can succeed before AMQP :5672 is accepting — wait for the listener
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 90s
     ports:
       - "9002:5672"
       - "9003:15672"

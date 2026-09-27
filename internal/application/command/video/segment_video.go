@@ -69,7 +69,7 @@ func (h *SegmentVideoHandler) Handle(ctx context.Context, cmd SegmentVideoComman
 	if err != nil {
 		return err
 	}
-	if domainvideo.ExtractionAlreadyDone(video.Status) {
+	if video.Status == domainvideo.StatusSuccess {
 		return nil
 	}
 	if job.Status == domainjob.StatusSuccess {
@@ -123,6 +123,9 @@ func (h *SegmentVideoHandler) load(ctx context.Context, videoID uuid.UUID) (*dom
 }
 
 func (h *SegmentVideoHandler) markExtracting(ctx context.Context, video *domainvideo.Video, job *domainjob.Job) error {
+	if job.Status == domainjob.StatusProcessing {
+		return nil
+	}
 	job.MarkProcessing()
 	if err := video.MarkExtracting(job.ID, job.Type, job.Status); err != nil {
 		return messaging.NonRetryable(err)

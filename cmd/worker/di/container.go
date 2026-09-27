@@ -144,15 +144,10 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 		"publish_video_frames_extracted_realtime",
 		publishVideoRealtime.OnFramesExtracted,
 	))
-	reg.Register(domainvideo.EventTypeVideoFramesExtracted, dedup.With(
+	reg.Register(domainvideo.EventTypeVideoOCRFrameCompleted, dedup.With(
 		dedupRepo,
-		"start_ocr_on_frames_extracted",
-		eventvideo.NewOCRFramesOnExtractedHandler(ocrHandler).Handle,
-	))
-	reg.Register(domainvideo.EventTypeVideoOCRBatchCompleted, dedup.With(
-		dedupRepo,
-		"persist_ocr_batch",
-		eventvideo.NewPersistOCRBatchHandler(ocrHandler).Handle,
+		"persist_ocr_frame",
+		eventvideo.NewPersistOCRFrameHandler(ocrHandler).Handle,
 	))
 	reg.Register(domainvideo.EventTypeVideoFrameExtractionFailed, dedup.With(
 		dedupRepo,

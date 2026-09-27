@@ -93,7 +93,7 @@ func sampleVideoView() *domainvideo.VideoView {
 		VideoURL:         "http://localhost:9000/media/videos/" + testutil.TestVideoID.String() + "/original.mp4",
 		SizeBytes:        1024,
 		ContentType:      "video/mp4",
-		Status:           domainvideo.StatusPendingUpload,
+		Status:           domainvideo.StatusPending,
 		CreatedAt:        time.Date(2026, 9, 22, 11, 0, 0, 0, time.UTC),
 		UpdatedAt:        time.Date(2026, 9, 22, 11, 0, 0, 0, time.UTC),
 		JobID:            &jobID,
@@ -114,7 +114,7 @@ func sampleVideoListView() domainvideo.VideoListView {
 		OriginalFilename: "demo.mp4",
 		ThumbnailKey:     domainvideo.NewThumbnailStorageKey(testutil.TestVideoID),
 		ThumbnailURL:     "http://localhost:9000/media/videos/" + testutil.TestVideoID.String() + "/thumbnail.jpg",
-		Status:           domainvideo.StatusFramesReady,
+		Status:           domainvideo.StatusProcessing,
 		CreatedAt:        time.Date(2026, 9, 22, 11, 0, 0, 0, time.UTC),
 	}
 }

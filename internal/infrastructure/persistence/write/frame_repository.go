@@ -56,24 +56,6 @@ func (r *frameWriteRepository) UpsertAll(ctx context.Context, frames []*domainfr
 	return nil
 }
 
-func (r *frameWriteRepository) UpdateRetention(ctx context.Context, frames []*domainframe.Frame) error {
-	if len(frames) == 0 {
-		return nil
-	}
-	db := DBWithContext(ctx, r.db)
-	for _, frame := range frames {
-		if err := db.Model(&FrameModel{}).
-			Where("id = ?", frame.ID).
-			Updates(map[string]any{
-				"retained":     frame.Retained,
-				"prune_reason": frame.PruneReason,
-			}).Error; err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (r *frameWriteRepository) ListByVideoID(ctx context.Context, videoID uuid.UUID) ([]*domainframe.Frame, error) {
 	var rows []FrameModel
 	if err := DBWithContext(ctx, r.db).

@@ -2,6 +2,8 @@ package rabbitmq
 
 import (
 	"fmt"
+	"log"
+	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -13,6 +15,21 @@ type Connection struct {
 }
 
 func Connect(url string, topology Topology, extra ...Topology) (*Connection, error) {
+	const attempts = 30
+	var lastErr error
+	for i := 1; i <= attempts; i++ {
+		conn, err := connectOnce(url, topology, extra...)
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+		log.Printf("rabbitmq connect attempt %d/%d failed: %v", i, attempts, err)
+		time.Sleep(2 * time.Second)
+	}
+	return nil, fmt.Errorf("rabbitmq connect after %d attempts: %w", attempts, lastErr)
+}
+
+func connectOnce(url string, topology Topology, extra ...Topology) (*Connection, error) {
 	conn, err := amqp.Dial(url)
 	if err != nil {
 		return nil, fmt.Errorf("rabbitmq dial: %w", err)

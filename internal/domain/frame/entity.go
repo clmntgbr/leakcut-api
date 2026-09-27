@@ -41,8 +41,3 @@ func NewFrame(
 		Retained:        true,
 	}
 }
-
-func (f *Frame) ApplyRetention(retained bool, pruneReason string) {
-	f.Retained = retained
-	f.PruneReason = pruneReason
-}

@@ -50,7 +50,7 @@ func (h *IngestRemoteHandler) Handle(ctx context.Context, cmd IngestRemoteComman
 	if video == nil {
 		return messaging.NonRetryable(domainvideo.ErrVideoNotFound)
 	}
-	if video.Status != domainvideo.StatusPendingUpload {
+	if video.Status != domainvideo.StatusPending {
 		return nil
 	}
 

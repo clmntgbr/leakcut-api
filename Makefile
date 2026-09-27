@@ -5,14 +5,14 @@ COMPOSE_DEV := docker compose -f compose.dev.yaml
 # ============================================
 
 dev:
-	$(COMPOSE_DEV) up -d --scale ocr=3 --scale frame=3 --scale classify=3 --scale segment=3
+	$(COMPOSE_DEV) up -d --scale ocr=3 --scale frame=3 --scale classify=3 --scale segment=1
 
 dev-restart:
 	$(COMPOSE_DEV) down
-	$(COMPOSE_DEV) up -d --scale ocr=3 --scale frame=3 --scale classify=3 --scale segment=3
+	$(COMPOSE_DEV) up -d --scale ocr=3 --scale frame=3 --scale classify=3 --scale segment=1
 
 build:
-	$(COMPOSE_DEV) up -d --build --scale ocr=3 --scale frame=3 --scale classify=3 --scale segment=3
+	$(COMPOSE_DEV) up -d --build --scale ocr=3 --scale frame=3 --scale classify=3 --scale segment=1
 
 dev-down:
 	$(COMPOSE_DEV) down
