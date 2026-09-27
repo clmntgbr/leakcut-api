@@ -28,6 +28,7 @@ type ClassifyFramesHandler struct {
 	ocrRepo            domainocr.WriteRepository
 	classificationRepo domainclassification.WriteRepository
 	outbox             port.OutboxRepository
+	storage            port.Storage
 	classifier         port.Classifier
 	threshold          float64
 	timeout            time.Duration
@@ -40,6 +41,7 @@ func NewClassifyFramesHandler(
 	ocrRepo domainocr.WriteRepository,
 	classificationRepo domainclassification.WriteRepository,
 	outbox port.OutboxRepository,
+	storage port.Storage,
 	classifier port.Classifier,
 	threshold float64,
 	timeout time.Duration,
@@ -54,6 +56,7 @@ func NewClassifyFramesHandler(
 		ocrRepo:            ocrRepo,
 		classificationRepo: classificationRepo,
 		outbox:             outbox,
+		storage:            storage,
 		classifier:         classifier,
 		threshold:          threshold,
 		timeout:            timeout,
@@ -67,7 +70,7 @@ func (h *ClassifyFramesHandler) Handle(ctx context.Context, cmd ClassifyFramesCo
 		defer cancel()
 	}
 
-	video, job, _, err := h.load(ctx, cmd.VideoID)
+	video, job, frameJob, err := h.load(ctx, cmd.VideoID)
 	if err != nil {
 		return err
 	}
@@ -118,6 +121,9 @@ func (h *ClassifyFramesHandler) Handle(ctx context.Context, cmd ClassifyFramesCo
 	if len(stored) < len(frames) {
 		return h.failOrRetry(ctx, video, job, errors.New("classify incomplete"), "classify incomplete")
 	}
+	if err := h.applyRetention(ctx, frameJob, frames, ocrResults, stored); err != nil {
+		return h.failOrRetry(ctx, video, job, err, "frame retention failed")
+	}
 	if err := h.markReady(ctx, video, job, stored); err != nil {
 		return messaging.Retryable(err)
 	}
@@ -152,6 +158,78 @@ func (h *ClassifyFramesHandler) load(ctx context.Context, videoID uuid.UUID) (*d
 		}
 	}
 	return video, job, extractJob, nil
+}
+
+func (h *ClassifyFramesHandler) applyRetention(
+	ctx context.Context,
+	frameJob *domainjob.Job,
+	frames []*domainframe.Frame,
+	ocrResults []*domainocr.Result,
+	classifications []*domainclassification.Classification,
+) error {
+	ocrByFrame := make(map[uuid.UUID]*domainocr.Result, len(ocrResults))
+	for _, result := range ocrResults {
+		ocrByFrame[result.FrameID] = result
+	}
+	classByFrame := classificationsByFrame(classifications)
+
+	candidates := make([]domainframe.RetentionCandidate, 0, len(frames))
+	for _, frame := range frames {
+		c := domainframe.RetentionCandidate{
+			FrameID:     frame.ID,
+			TimestampMs: frame.TimestampMs,
+			StorageKey:  frame.StorageKey,
+		}
+		if ocr := ocrByFrame[frame.ID]; ocr != nil {
+			c.OCRStatus = ocr.Status
+		}
+		if class := classByFrame[frame.ID]; class != nil {
+			c.Confidential = class.Confidential
+		}
+		candidates = append(candidates, c)
+	}
+
+	policy := domainframe.RetentionPolicy{
+		RatioNeutral:         frameJob.RetentionRatioNeutral,
+		RatioEmpty:           frameJob.RetentionRatioEmpty,
+		ContextWindowSeconds: frameJob.RetentionContextWindowSeconds,
+	}
+	decisions := domainframe.DecideRetention(candidates, policy)
+	if len(decisions) == 0 {
+		return nil
+	}
+
+	byID := make(map[uuid.UUID]*domainframe.Frame, len(frames))
+	for _, frame := range frames {
+		byID[frame.ID] = frame
+	}
+
+	updated := make([]*domainframe.Frame, 0, len(decisions))
+	keysToDelete := make([]string, 0)
+	for _, decision := range decisions {
+		frame := byID[decision.FrameID]
+		if frame == nil {
+			continue
+		}
+		frame.ApplyRetention(decision.Retained, decision.PruneReason)
+		updated = append(updated, frame)
+		if !decision.Retained && decision.StorageKey != "" {
+			keysToDelete = append(keysToDelete, decision.StorageKey)
+		}
+	}
+
+	if err := h.frameRepo.UpdateRetention(ctx, updated); err != nil {
+		return err
+	}
+	if h.storage == nil {
+		return nil
+	}
+	for _, key := range keysToDelete {
+		if err := h.storage.Delete(ctx, key); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (h *ClassifyFramesHandler) markProcessing(ctx context.Context, video *domainvideo.Video, job *domainjob.Job, expected int) error {

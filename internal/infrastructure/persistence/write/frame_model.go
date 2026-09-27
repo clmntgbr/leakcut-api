@@ -14,6 +14,8 @@ type FrameModel struct {
 	StorageKey      string    `gorm:"column:storage_key"`
 	SelectionReason string    `gorm:"column:selection_reason"`
 	PHashDistance   int       `gorm:"column:phash_distance"`
+	Retained        bool      `gorm:"column:retained"`
+	PruneReason     string    `gorm:"column:prune_reason"`
 }
 
 func (FrameModel) TableName() string {
@@ -29,6 +31,8 @@ func frameModelFromDomain(f *domainframe.Frame) *FrameModel {
 		StorageKey:      f.StorageKey,
 		SelectionReason: f.SelectionReason,
 		PHashDistance:   f.PHashDistance,
+		Retained:        f.Retained,
+		PruneReason:     f.PruneReason,
 	}
 }
 
@@ -41,5 +45,7 @@ func frameDomainFromModel(m *FrameModel) *domainframe.Frame {
 		StorageKey:      m.StorageKey,
 		SelectionReason: m.SelectionReason,
 		PHashDistance:   m.PHashDistance,
+		Retained:        m.Retained,
+		PruneReason:     m.PruneReason,
 	}
 }

@@ -59,6 +59,8 @@ type VideoFrameResponse struct {
 	ImageURL        *string                      `json:"imageUrl"`
 	SelectionReason string                       `json:"selectionReason"`
 	PHashDistance   int                          `json:"phashDistance"`
+	Retained        bool                         `json:"retained"`
+	PruneReason     *string                      `json:"pruneReason"`
 	OCRText         string                       `json:"ocrText"`
 	OCRStatus       *string                      `json:"ocrStatus"`
 	OCRConfidence   float64                      `json:"ocrConfidence"`
@@ -159,6 +161,8 @@ func newVideoFrameResponses(views []domainvideo.VideoFrameDetailView) []VideoFra
 			ImageURL:        optionalNonEmptyString(frame.ImageURL),
 			SelectionReason: frame.SelectionReason,
 			PHashDistance:   frame.PHashDistance,
+			Retained:        frame.Retained,
+			PruneReason:     optionalNonEmptyString(frame.PruneReason),
 			OCRText:         frame.OCRText,
 			OCRStatus:       optionalNonEmptyString(frame.OCRStatus),
 			OCRConfidence:   frame.OCRConfidence,

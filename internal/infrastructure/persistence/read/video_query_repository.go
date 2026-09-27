@@ -218,6 +218,8 @@ type frameDetailRow struct {
 	StorageKey           string     `gorm:"column:storage_key"`
 	SelectionReason      string     `gorm:"column:selection_reason"`
 	PHashDistance        int        `gorm:"column:phash_distance"`
+	Retained             bool       `gorm:"column:retained"`
+	PruneReason          string     `gorm:"column:prune_reason"`
 	OCRText              string     `gorm:"column:ocr_text"`
 	OCRStatus            string     `gorm:"column:ocr_status"`
 	OCRConfidence        float64    `gorm:"column:ocr_confidence"`
@@ -242,6 +244,8 @@ func (r *videoReadRepository) ListFramesByVideoID(ctx context.Context, id, userI
 			frames.storage_key,
 			frames.selection_reason,
 			frames.phash_distance,
+			frames.retained,
+			COALESCE(frames.prune_reason, '') AS prune_reason,
 			COALESCE(ocrs.text, '') AS ocr_text,
 			COALESCE(ocrs.status, '') AS ocr_status,
 			COALESCE(ocrs.confidence, 0) AS ocr_confidence,
@@ -273,6 +277,8 @@ func (r *videoReadRepository) ListFramesByVideoID(ctx context.Context, id, userI
 			StorageKey:      row.StorageKey,
 			SelectionReason: row.SelectionReason,
 			PHashDistance:   row.PHashDistance,
+			Retained:        row.Retained,
+			PruneReason:     row.PruneReason,
 			OCRText:         row.OCRText,
 			OCRStatus:       row.OCRStatus,
 			OCRConfidence:   row.OCRConfidence,

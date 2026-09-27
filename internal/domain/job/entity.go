@@ -20,38 +20,47 @@ const (
 )
 
 const (
-	DefaultAnalysisFPS            = 2.0
-	DefaultPHashDistanceThreshold = 14
-	DefaultMaxIntervalSeconds     = 15
-	DefaultFrameMaxWidthPx        = 960
-	DefaultFrameUploadConcurrency = 4
+	DefaultAnalysisFPS                   = 2.0
+	DefaultPHashDistanceThreshold        = 14
+	DefaultMaxIntervalSeconds            = 15
+	DefaultFrameMaxWidthPx               = 960
+	DefaultFrameUploadConcurrency        = 4
+	DefaultRetentionRatioNeutral         = 0.5
+	DefaultRetentionRatioEmpty           = 0.1
+	DefaultRetentionContextWindowSeconds = 4
 )
 
 type Job struct {
-	ID                     uuid.UUID
-	VideoID                uuid.UUID
-	Type                   string
-	Status                 string
-	FailureReason          string
-	AnalysisFPS            float64
-	PHashDistanceThreshold int
-	MaxIntervalSeconds     int
-	ExpectedFrameCount     int
-	OCRCompletedCount      int
-	CreatedAt              time.Time
-	CompletedAt            *time.Time
+	ID                            uuid.UUID
+	VideoID                       uuid.UUID
+	Type                          string
+	Status                        string
+	FailureReason                 string
+	AnalysisFPS                   float64
+	PHashDistanceThreshold        int
+	MaxIntervalSeconds            int
+	ExpectedFrameCount            int
+	OCRCompletedCount             int
+	RetentionRatioNeutral         float64
+	RetentionRatioEmpty           float64
+	RetentionContextWindowSeconds int
+	CreatedAt                     time.Time
+	CompletedAt                   *time.Time
 }
 
 func NewFrameJob(videoID uuid.UUID) *Job {
 	return &Job{
-		ID:                     uuid.New(),
-		VideoID:                videoID,
-		Type:                   TypeFrame,
-		Status:                 StatusPending,
-		AnalysisFPS:            DefaultAnalysisFPS,
-		PHashDistanceThreshold: DefaultPHashDistanceThreshold,
-		MaxIntervalSeconds:     DefaultMaxIntervalSeconds,
-		CreatedAt:              time.Now().UTC(),
+		ID:                            uuid.New(),
+		VideoID:                       videoID,
+		Type:                          TypeFrame,
+		Status:                        StatusPending,
+		AnalysisFPS:                   DefaultAnalysisFPS,
+		PHashDistanceThreshold:        DefaultPHashDistanceThreshold,
+		MaxIntervalSeconds:            DefaultMaxIntervalSeconds,
+		RetentionRatioNeutral:         DefaultRetentionRatioNeutral,
+		RetentionRatioEmpty:           DefaultRetentionRatioEmpty,
+		RetentionContextWindowSeconds: DefaultRetentionContextWindowSeconds,
+		CreatedAt:                     time.Now().UTC(),
 	}
 }
 

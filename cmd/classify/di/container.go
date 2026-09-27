@@ -14,6 +14,7 @@ import (
 	"go-api/internal/infrastructure/persistence/outbox"
 	"go-api/internal/infrastructure/persistence/processed"
 	"go-api/internal/infrastructure/persistence/write"
+	"go-api/internal/infrastructure/storage"
 
 	"gorm.io/gorm"
 )
@@ -39,6 +40,11 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 	outboxRepo := outbox.NewRepository(db)
 	dedupRepo := processed.NewRepository(db)
 
+	minioStorage, err := storage.NewMinIOStorage(env)
+	if err != nil {
+		log.Fatalf("failed to create storage client: %v", err)
+	}
+
 	log.Printf("classify engine=%s", env.ClassifyEngine)
 
 	classifyHandler := videocommand.NewClassifyFramesHandler(
@@ -48,6 +54,7 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 		write.NewOCRWriteRepository(db),
 		write.NewClassificationWriteRepository(db),
 		outboxRepo,
+		minioStorage,
 		classify.NewClassifier(
 			env.ClassifyEngine,
 			env.AIGatewayURL,

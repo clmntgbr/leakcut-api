@@ -79,6 +79,8 @@ type VideoFrameDetailView struct {
 	ImageURL        string
 	SelectionReason string
 	PHashDistance   int
+	Retained        bool
+	PruneReason     string
 	OCRText         string
 	OCRStatus       string
 	OCRConfidence   float64

@@ -42,7 +42,7 @@ MinIO → POST /webhooks/minio/object-created → outbox video.uploaded.v1
 
 Jobs use shared statuses (`pending` / `processing` / `success` / `failed`) plus `type` (`frame` / `ocr` / `classify`). Video statuses above are the pipeline cursor; later ones (`ocr_*`, `classifying`, `classified`) are in [ocr](ocr.md) and [classify](classify.md).
 
-`GET /api/videos/:id` embeds `jobs[]` and `frames[]`. Each frame carries `ocrText` / `ocrLines` (`box` in JPEG pixels) / `ocrStatus` and optional `classification` (`confidential`, `probability`, `categories[]`). Presigned `videoUrl`, `thumbnailUrl`, and `imageUrl` expire with the storage TTL.
+`GET /api/videos/:id` embeds `jobs[]` and `frames[]`. Each frame carries `ocrText` / `ocrLines` (`box` in JPEG pixels) / `ocrStatus`, optional `classification`, plus `retained` / `pruneReason` after classify ([retention](retention.md)). Presigned `videoUrl`, `thumbnailUrl`, and `imageUrl` expire with the storage TTL; pruned frames have `imageUrl: null`.
 
 ## Frame selection
 

@@ -242,6 +242,8 @@ func TestVideoHandler_GetByID_Success_WithClassifications(t *testing.T) {
 		ImageURL:        "http://localhost:9000/media/videos/" + testutil.TestVideoID.String() + "/frames/0011.jpg",
 		SelectionReason: "scene_change",
 		PHashDistance:   34,
+		Retained:        true,
+		PruneReason:     "kept_confidential",
 		OCRText:         "IBAN FR76 3000 6000 0112 3456 7890 189",
 		OCRStatus:       "success",
 		OCRConfidence:   0.91,
@@ -302,6 +304,12 @@ func TestVideoHandler_GetByID_Success_WithClassifications(t *testing.T) {
 	}
 	if frame.ImageURL == nil || *frame.ImageURL == "" {
 		t.Fatal("expected frame image url")
+	}
+	if !frame.Retained {
+		t.Fatal("expected retained frame")
+	}
+	if frame.PruneReason == nil || *frame.PruneReason != "kept_confidential" {
+		t.Fatalf("pruneReason: %v", frame.PruneReason)
 	}
 	if frame.Classification == nil {
 		t.Fatal("expected classification")

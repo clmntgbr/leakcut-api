@@ -17,6 +17,8 @@ type Frame struct {
 	StorageKey      string
 	SelectionReason string
 	PHashDistance   int
+	Retained        bool
+	PruneReason     string
 }
 
 func NewFrame(
@@ -34,5 +36,11 @@ func NewFrame(
 		StorageKey:      storageKey,
 		SelectionReason: selectionReason,
 		PHashDistance:   phashDistance,
+		Retained:        true,
 	}
+}
+
+func (f *Frame) ApplyRetention(retained bool, pruneReason string) {
+	f.Retained = retained
+	f.PruneReason = pruneReason
 }

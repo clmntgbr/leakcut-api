@@ -14,10 +14,13 @@ video.frames_ocr_completed.v1 → queue classify
      → load OCR rows → skip empty text
      → local rules or POST ai-gateway /v1/evaluate
      → upsert classifications
+     → apply frame retention (delete pruned S3 images)
      → video.frames_classified.v1
 ```
 
 Classification runs **only** when trimmed OCR text is non-empty. Empty / whitespace → classification `skipped`, `confidential=false`. That is not a hit.
+
+After all classifications exist, the same classify consumer applies the [frame retention](retention.md) policy before marking the job `success`.
 
 ## Queue
 

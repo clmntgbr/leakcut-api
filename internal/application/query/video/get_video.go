@@ -44,6 +44,10 @@ func (h *GetVideoByIDHandler) Handle(ctx context.Context, q GetVideoByIDQuery) (
 		return nil, fmt.Errorf("failed to list video frames: %w", err)
 	}
 	for i := range frames {
+		if !frames[i].Retained {
+			frames[i].ImageURL = ""
+			continue
+		}
 		frames[i].ImageURL = presignMediaURL(ctx, h.storage, view.ID, frames[i].StorageKey)
 	}
 	view.Frames = frames
