@@ -12,6 +12,8 @@ import (
 	"github.com/google/uuid"
 )
 
+// ClassifyFramesOnOCRCompletedHandler finalizes classify when OCR finishes after
+// per-frame classify messages (covers the race where the last OCR row lands last).
 type ClassifyFramesOnOCRCompletedHandler struct {
 	classify *videocommand.ClassifyFramesHandler
 }
@@ -31,12 +33,6 @@ func (h *ClassifyFramesOnOCRCompletedHandler) Handle(ctx context.Context, payloa
 		return messaging.NonRetryable(err)
 	}
 
-	log.Printf("classify worker received event type=%s videoId=%s", evt.EventType(), evt.VideoID)
-	log.Printf("classify worker processing videoId=%s", evt.VideoID)
-	if err := h.classify.Handle(ctx, videocommand.ClassifyFramesCommand{VideoID: videoID}); err != nil {
-		log.Printf("classify worker failed videoId=%s: %v", evt.VideoID, err)
-		return err
-	}
-	log.Printf("classify worker finished videoId=%s", evt.VideoID)
-	return nil
+	log.Printf("classify worker finalize on OCR completed videoId=%s", evt.VideoID)
+	return h.classify.Finalize(ctx, videocommand.ClassifyFrameCommand{VideoID: videoID})
 }

@@ -13,6 +13,7 @@ Keep the pipeline cheap on long videos without dropping screens that might conta
 | `FRAME_UPLOAD_CONCURRENCY` | `4` | Parallel MinIO puts during extract |
 | `--scale frame=N` | `2` | Parallel segment extract on one video |
 | `--scale ocr=N` | `2` | Competing consumers on `video.ocr_frame_requested.v1` (one frame each) |
+| `--scale classify=N` | `2` | Competing consumers on `video.classify_frame_requested.v1` (one frame each) |
 | `OCR_CONCURRENCY` | `2` | RabbitMQ prefetch per OCR replica |
 
 A previous 5-minute clip at ~1.6 fps / 8% produced ~490 frames. Pixel luminance also missed same-dark-theme scene changes. pHash (default 14) targets ~40–60 keeps on a 5-minute clip. If volume is still high, raise the threshold (16, 18, 20); if a scene is missed, lower it (12, 10). There is no pre-OCR “has text?” gate — false negatives would skip real leaks.
@@ -22,19 +23,25 @@ A previous 5-minute clip at ~1.6 fps / 8% produced ~490 frames. Pixel luminance 
 | Process | Scale | Why |
 |---------|-------|-----|
 | `worker` | **1** (`container_name: worker`) | Outbox relay + expire; no `SKIP LOCKED` |
-| `frame` | N | CPU ffmpeg; one video per message |
-| `ocr` | N | One message **per frame**; this is the fan-out |
-| `classify` | N | One message per video after OCR completes |
+| `frame` | N | CPU ffmpeg; one **segment** per message |
+| `ocr` | N | One message **per frame** |
+| `classify` | N | One message **per frame** after OCR |
 
 ```bash
 docker compose -f compose.dev.yaml up --scale ocr=2 --scale frame=2 --scale classify=2
 ```
 
-## Incremental OCR
+## Pipeline fan-out
 
-ffmpeg streams candidates **per segment**. Each retained frame is uploaded in a small pool and upserted — no per-frame outbox at extract. When all segments finish, `video.frames_extracted.v1` triggers OCR Start, which writes **one outbox row per frame** (`video.ocr_frame_requested.v1`). OCR replicas compete on that queue.
+```
+segment_ready × N  →  frame workers
+                   →  ocr_frame_requested × frames
+                   →  classify_frame_requested × frames
+```
 
-Outbox poll is `OUTBOX_POLL_INTERVAL` (default `2s`). That is the delay between “OCR Start committed” and “replicas begin pulling frames”.
+ffmpeg streams candidates **per segment**. Each retained frame is uploaded, upserted, then **immediately** enqueued as `video.ocr_frame_requested.v1` (pipeline does not wait for the segment to finish). OCR persist emits `classify_frame_requested` the same way. See [segment](segment.md), [ocr](ocr.md), [classify](classify.md).
+
+Outbox poll is `OUTBOX_POLL_INTERVAL` (default `2s`).
 
 ## What not to do
 

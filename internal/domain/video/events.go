@@ -17,6 +17,7 @@ const (
 	EventTypeVideoFramesOCRCompleted    = "video.frames_ocr_completed.v1"
 	EventTypeVideoOCRFailed             = "video.ocr_failed.v1"
 	EventTypeVideoClassifying           = "video.classifying.v1"
+	EventTypeVideoClassifyFrameRequested = "video.classify_frame_requested.v1"
 	EventTypeVideoFramesClassified      = "video.frames_classified.v1"
 	EventTypeVideoClassifyFailed        = "video.classify_failed.v1"
 	EventTypeVideoUploadExpired         = "video.upload_expired.v1"
@@ -284,6 +285,20 @@ func (e VideoClassifying) EventID() string       { return e.ID }
 func (e VideoClassifying) EventType() string     { return EventTypeVideoClassifying }
 func (e VideoClassifying) AggregateID() string   { return e.VideoID }
 func (e VideoClassifying) OccurredAt() time.Time { return e.Timestamp }
+
+type VideoClassifyFrameRequested struct {
+	ID        string    `json:"eventId"`
+	VideoID   string    `json:"videoId"`
+	UserID    string    `json:"userId,omitempty"`
+	JobID     string    `json:"jobId"`
+	FrameID   string    `json:"frameId"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+func (e VideoClassifyFrameRequested) EventID() string       { return e.ID }
+func (e VideoClassifyFrameRequested) EventType() string     { return EventTypeVideoClassifyFrameRequested }
+func (e VideoClassifyFrameRequested) AggregateID() string   { return e.VideoID }
+func (e VideoClassifyFrameRequested) OccurredAt() time.Time { return e.Timestamp }
 
 type ClassificationCategoryPayload struct {
 	Name        string  `json:"name"`

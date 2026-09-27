@@ -13,7 +13,8 @@ video.uploaded.v1
   → outbox video.segment_ready.v1 × N
   → queue frame (one message per segment)
   → when CompletedSegmentCount == ExpectedSegmentCount
-       → video.frames_extracted.v1 → OCR Start → video.ocr_frame_requested.v1 × N
+       → video.segment_ready.v1 × N → frame → video.ocr_frame_requested.v1 × frames
+       → … → classify_frame_requested.v1 × frames
 ```
 
 Short videos stay on a **single path**: one `video.segment_ready.v1` with `segmentIndex=0`, `offsetMs=0`, `storageKey` = the original object (no duplicate upload).

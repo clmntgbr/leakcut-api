@@ -133,7 +133,7 @@ func Load() *Config {
 		OCRMinConfidence:        getEnvFloatOrDefault("OCR_MIN_CONFIDENCE", 0.5),
 		OCRLang:                 getEnvOrDefault("OCR_LANG", "fr+en"),
 		ClassifyQueue:           getEnvOrDefault("CLASSIFY_QUEUE", "classify"),
-		ClassifyRoutingKey:      getEnvOrDefault("CLASSIFY_ROUTING_KEY", "video.frames_ocr_completed.v1"),
+		ClassifyRoutingKey:      getEnvOrDefault("CLASSIFY_ROUTING_KEY", "video.classify_frame_requested.v1,video.frames_ocr_completed.v1"),
 		ClassifyConcurrency:     getEnvIntOrDefault("CLASSIFY_CONCURRENCY", 4),
 		ClassifyEngineTimeout:   getEnvDuration("CLASSIFY_ENGINE_TIMEOUT", 30*time.Second),
 		ClassifyTimeout:         getEnvDuration("CLASSIFY_TIMEOUT", 10*time.Minute),

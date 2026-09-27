@@ -2,7 +2,7 @@
 
 ## Overview
 
-Decide whether each frame’s OCR text looks confidential. The `classify` worker consumes `video.frames_ocr_completed.v1`. Engine is `CLASSIFY_ENGINE`:
+Decide whether each frame’s OCR text looks confidential. The `classify` worker consumes **one message per frame** (`video.classify_frame_requested.v1`), emitted as each OCR result is persisted. Engine is `CLASSIFY_ENGINE`:
 
 | Value | Engine |
 |-------|--------|
@@ -10,28 +10,28 @@ Decide whether each frame’s OCR text looks confidential. The `classify` worker
 | `jev` | Vercel AI Gateway `typesafe-ai/jev` |
 
 ```
-video.frames_ocr_completed.v1 → queue classify
-     → load OCR rows → skip empty text
-     → local rules or POST ai-gateway /v1/evaluate
-     → upsert classifications
-     → apply frame retention (delete pruned S3 images)
-     → video.frames_classified.v1
+video.ocr_batch_completed.v1 → persist OCR
+     → outbox video.classify_frame_requested.v1 × N
+     → queue classify (competing consumers) → skip empty text / run engine
+     → upsert classification
+     → when extract + all OCR + all classifications done
+       → retention → video.frames_classified.v1
 ```
 
-Classification runs **only** when trimmed OCR text is non-empty. Empty / whitespace → classification `skipped`, `confidential=false`. That is not a hit.
+`video.frames_ocr_completed.v1` is also bound for a finalize catch-up (race when the last OCR row lands after the last classify).
 
-After all classifications exist, the same classify consumer applies the [frame retention](retention.md) policy before marking the job `success`.
+Classification runs **only** when trimmed OCR text is non-empty. Empty / whitespace → classification `skipped`, `confidential=false`.
 
 ## Queue
 
 | Setting | Value |
 |---------|-------|
 | Queue | `CLASSIFY_QUEUE` (`classify`) |
-| Routing | `CLASSIFY_ROUTING_KEY` (`video.frames_ocr_completed.v1`) |
+| Routing | `CLASSIFY_ROUTING_KEY` (`video.classify_frame_requested.v1,video.frames_ocr_completed.v1`) |
 | Binary | `cmd/classify` |
 | Threshold | `CLASSIFY_THRESHOLD` (`0.7`) |
 
-`classify` has no `container_name` — `--scale classify=2` is allowed. One message per **video** (after all OCR rows exist), so extra replicas help across videos, not inside one video.
+`classify` has no `container_name` — `--scale classify=N` shares frame messages across replicas.
 
 The `classify` job uses the shared statuses `pending` → `processing` → `success` / `failed` (`type=classify`).
 
@@ -78,19 +78,17 @@ A score of `0.01`–`0.02` is a non-hit. Do not treat residual probability as a 
 
 | Variable | Role |
 |----------|------|
-| `CLASSIFY_ENGINE` | `local` or `jev` (compose.dev defaults to `local`) |
-| `AI_GATEWAY_URL` | Default `https://ai-gateway.vercel.sh` (Jev only) |
-| `AI_GATEWAY_API_KEY` or `JEV_API_KEY` | Bearer token (Jev only) |
-| `CLASSIFY_THRESHOLD` | Confidential cutoff (default `0.7`) |
+| `CLASSIFY_ENGINE` | `local` or `jev` |
+| `CLASSIFY_THRESHOLD` | Confidential cutoff |
+| `CLASSIFY_CONCURRENCY` | Prefetch / in-process parallelism |
+| `CLASSIFY_TIMEOUT` | Per-message timeout |
+| `AI_GATEWAY_URL` / `AI_GATEWAY_API_KEY` / `JEV_MODEL` | Jev only |
 
 ## Code map
 
 | Piece | Location |
 |-------|----------|
-| Worker | `cmd/classify` |
-| Command | `internal/application/command/video/classify_frames.go` |
-| Jev client | `internal/infrastructure/classify/client.go` |
-| Domain | `internal/domain/classification/` |
-| Event start | `internal/application/event/video/on_ocr_completed_classify.go` |
-
-`GET /api/videos/:id` embeds each frame’s `classification` — see [upload & frame extraction](frame.md).
+| Per-frame handler | `internal/application/command/video/classify_frames.go` |
+| Event | `on_classify_frame_requested.go` |
+| Finalize on OCR done | `on_ocr_completed_classify.go` |
+| Engines | `internal/infrastructure/classify/` |

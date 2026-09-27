@@ -13,9 +13,11 @@ Two ingest paths:
 client → POST /api/videos/upload-url → MinIO PUT
 MinIO → POST /webhooks/minio/object-created → outbox video.uploaded.v1
      → queue segment → plan/split → video.segment_ready.v1 × N
-     → queue frame → extract per segment (upload + upsert frames)
-                  → when all segments done → video.frames_extracted.v1
-     → queue ocr → one message per frame → RapidOCR → video.ocr_batch_completed.v1
+     → queue frame → extract per segment → video.ocr_frame_requested.v1 × frames
+                  → when all segments done → video.frames_extracted.v1 (catch-up)
+     → queue ocr → one frame → video.ocr_batch_completed.v1
+                  → classify_frame_requested.v1 × 1
+     → queue classify → one frame → when all done → video.frames_classified.v1
 ```
 
 ## HTTP routes

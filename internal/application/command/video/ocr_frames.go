@@ -88,7 +88,9 @@ func (h *OCRFramesHandler) PersistBatch(ctx context.Context, cmd PersistOCRBatch
 	if err != nil {
 		return err
 	}
-	if job.Status == domainjob.StatusSuccess || video.Status == domainvideo.StatusOCRReady {
+	if job.Status == domainjob.StatusSuccess ||
+		video.Status == domainvideo.StatusOCRReady ||
+		video.Status == domainvideo.StatusClassified {
 		return nil
 	}
 
@@ -104,7 +106,10 @@ func (h *OCRFramesHandler) PersistBatch(ctx context.Context, cmd PersistOCRBatch
 	known := resultsByFrame(existing)
 	extractDone := extractJob.Status == domainjob.StatusSuccess
 
-	if extractDone && (video.Status == domainvideo.StatusFramesReady || job.Status == domainjob.StatusPending) {
+	if job.Status == domainjob.StatusPending ||
+		video.Status == domainvideo.StatusExtracting ||
+		video.Status == domainvideo.StatusExtractionQueued ||
+		video.Status == domainvideo.StatusFramesReady {
 		if err := h.markProcessing(ctx, video, job, len(frames), countFinal(existing), nil); err != nil {
 			return err
 		}
@@ -201,9 +206,11 @@ func (h *OCRFramesHandler) persistBatch(
 		return nil
 	}
 	added := 0
+	newFrameIDs := make([]uuid.UUID, 0, len(results))
 	for _, result := range results {
 		if existing, ok := known[result.FrameID]; !ok || !existing.IsFinal() {
 			added++
+			newFrameIDs = append(newFrameIDs, result.FrameID)
 		}
 	}
 	previousCompleted := job.OCRCompletedCount
@@ -214,7 +221,24 @@ func (h *OCRFramesHandler) persistBatch(
 			return err
 		}
 	}
-	err := h.videoRepo.WithTransaction(ctx, func(txCtx context.Context) error {
+
+	classifyJob, err := h.jobRepo.GetByVideoIDAndType(ctx, video.ID, domainjob.TypeClassify)
+	if err != nil {
+		job.OCRCompletedCount = previousCompleted
+		return err
+	}
+	if classifyJob == nil {
+		classifyJob = domainjob.NewClassifyJob(video.ID)
+		if err := h.jobRepo.Save(ctx, classifyJob); err != nil {
+			job.OCRCompletedCount = previousCompleted
+			return err
+		}
+	}
+	if len(newFrameIDs) > 0 {
+		video.RequestClassifyFrames(classifyJob.ID, newFrameIDs)
+	}
+
+	err = h.videoRepo.WithTransaction(ctx, func(txCtx context.Context) error {
 		if err := h.ocrRepo.UpsertAll(txCtx, results); err != nil {
 			return err
 		}

@@ -17,8 +17,9 @@ import (
 	"github.com/google/uuid"
 )
 
-type ClassifyFramesCommand struct {
+type ClassifyFrameCommand struct {
 	VideoID uuid.UUID
+	FrameID uuid.UUID
 }
 
 type ClassifyFramesHandler struct {
@@ -63,14 +64,14 @@ func NewClassifyFramesHandler(
 	}
 }
 
-func (h *ClassifyFramesHandler) Handle(ctx context.Context, cmd ClassifyFramesCommand) error {
+func (h *ClassifyFramesHandler) HandleFrame(ctx context.Context, cmd ClassifyFrameCommand) error {
 	if h.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, h.timeout)
 		defer cancel()
 	}
 
-	video, job, frameJob, err := h.load(ctx, cmd.VideoID)
+	video, job, frameJob, ocrJob, err := h.load(ctx, cmd.VideoID)
 	if err != nil {
 		return err
 	}
@@ -82,27 +83,38 @@ func (h *ClassifyFramesHandler) Handle(ctx context.Context, cmd ClassifyFramesCo
 	if err != nil {
 		return h.failOrRetry(ctx, video, job, err, "failed to load frames")
 	}
+	var target *domainframe.Frame
+	for _, frame := range frames {
+		if frame.ID == cmd.FrameID {
+			target = frame
+			break
+		}
+	}
+	if target == nil {
+		return messaging.NonRetryable(errors.New("frame not found"))
+	}
 
-	ocrResults, err := h.ocrRepo.ListByFrameIDs(ctx, frameIDs(frames))
+	ocrResults, err := h.ocrRepo.ListByFrameIDs(ctx, []uuid.UUID{cmd.FrameID})
 	if err != nil {
 		return h.failOrRetry(ctx, video, job, err, "failed to load ocr")
 	}
-
-	existing, err := h.classificationRepo.ListByFrameIDs(ctx, frameIDs(frames))
+	existing, err := h.classificationRepo.ListByFrameIDs(ctx, []uuid.UUID{cmd.FrameID})
 	if err != nil {
 		return h.failOrRetry(ctx, video, job, err, "failed to load classifications")
 	}
-	known := classificationsByFrame(existing)
+	if len(existing) > 0 && existing[0].IsFinal() {
+		return h.tryFinalize(ctx, video, job, frameJob, ocrJob)
+	}
 
 	if err := h.markProcessing(ctx, video, job, len(frames)); err != nil {
 		return err
 	}
 
-	pending, skipped := pendingClassifyFrames(frames, ocrResults, existing)
+	pending, skipped := pendingClassifyFrames([]*domainframe.Frame{target}, ocrResults, existing)
+	known := classificationsByFrame(existing)
 	if err := h.persistClassifications(ctx, skipped, known); err != nil {
 		return h.failOrRetry(ctx, video, job, err, "failed to persist classifications")
 	}
-
 	if len(pending) > 0 {
 		raw, recErr := h.classifier.Classify(ctx, pending, h.threshold)
 		if recErr != nil {
@@ -114,13 +126,56 @@ func (h *ClassifyFramesHandler) Handle(ctx context.Context, cmd ClassifyFramesCo
 		}
 	}
 
+	return h.tryFinalize(ctx, video, job, frameJob, ocrJob)
+}
+
+// Finalize attempts retention + classified when extract, OCR, and classify rows are complete.
+func (h *ClassifyFramesHandler) Finalize(ctx context.Context, cmd ClassifyFrameCommand) error {
+	video, job, frameJob, ocrJob, err := h.load(ctx, cmd.VideoID)
+	if err != nil {
+		return err
+	}
+	if job.Status == domainjob.StatusSuccess || video.Status == domainvideo.StatusClassified {
+		return nil
+	}
+	return h.tryFinalize(ctx, video, job, frameJob, ocrJob)
+}
+
+func (h *ClassifyFramesHandler) tryFinalize(
+	ctx context.Context,
+	video *domainvideo.Video,
+	job *domainjob.Job,
+	frameJob *domainjob.Job,
+	_ *domainjob.Job,
+) error {
+	if frameJob.Status != domainjob.StatusSuccess {
+		return nil
+	}
+
+	frames, err := h.frameRepo.ListByVideoID(ctx, video.ID)
+	if err != nil {
+		return h.failOrRetry(ctx, video, job, err, "failed to load frames")
+	}
+	if len(frames) == 0 {
+		return h.markReady(ctx, video, job, nil)
+	}
+
+	ocrResults, err := h.ocrRepo.ListByFrameIDs(ctx, frameIDs(frames))
+	if err != nil {
+		return h.failOrRetry(ctx, video, job, err, "failed to load ocr")
+	}
+	if len(ocrResults) < len(frames) {
+		return nil
+	}
+
 	stored, err := h.classificationRepo.ListByFrameIDs(ctx, frameIDs(frames))
 	if err != nil {
 		return h.failOrRetry(ctx, video, job, err, "failed to load classifications")
 	}
 	if len(stored) < len(frames) {
-		return h.failOrRetry(ctx, video, job, errors.New("classify incomplete"), "classify incomplete")
+		return nil
 	}
+
 	if err := h.applyRetention(ctx, frameJob, frames, ocrResults, stored); err != nil {
 		return h.failOrRetry(ctx, video, job, err, "frame retention failed")
 	}
@@ -130,34 +185,42 @@ func (h *ClassifyFramesHandler) Handle(ctx context.Context, cmd ClassifyFramesCo
 	return nil
 }
 
-func (h *ClassifyFramesHandler) load(ctx context.Context, videoID uuid.UUID) (*domainvideo.Video, *domainjob.Job, *domainjob.Job, error) {
+func (h *ClassifyFramesHandler) load(
+	ctx context.Context,
+	videoID uuid.UUID,
+) (*domainvideo.Video, *domainjob.Job, *domainjob.Job, *domainjob.Job, error) {
 	video, err := h.videoRepo.GetByID(ctx, videoID)
 	if err != nil {
-		return nil, nil, nil, messaging.Retryable(err)
+		return nil, nil, nil, nil, messaging.Retryable(err)
 	}
 	if video == nil {
-		return nil, nil, nil, messaging.NonRetryable(domainvideo.ErrVideoNotFound)
+		return nil, nil, nil, nil, messaging.NonRetryable(domainvideo.ErrVideoNotFound)
 	}
 
 	extractJob, err := h.jobRepo.GetByVideoIDAndType(ctx, video.ID, domainjob.TypeFrame)
 	if err != nil {
-		return nil, nil, nil, messaging.Retryable(err)
+		return nil, nil, nil, nil, messaging.Retryable(err)
 	}
 	if extractJob == nil {
-		return nil, nil, nil, messaging.NonRetryable(errors.New("frame job not found"))
+		return nil, nil, nil, nil, messaging.NonRetryable(errors.New("frame job not found"))
+	}
+
+	ocrJob, err := h.jobRepo.GetByVideoIDAndType(ctx, video.ID, domainjob.TypeOCR)
+	if err != nil {
+		return nil, nil, nil, nil, messaging.Retryable(err)
 	}
 
 	job, err := h.jobRepo.GetByVideoIDAndType(ctx, video.ID, domainjob.TypeClassify)
 	if err != nil {
-		return nil, nil, nil, messaging.Retryable(err)
+		return nil, nil, nil, nil, messaging.Retryable(err)
 	}
 	if job == nil {
 		job = domainjob.NewClassifyJob(video.ID)
 		if err := h.jobRepo.Save(ctx, job); err != nil {
-			return nil, nil, nil, messaging.Retryable(err)
+			return nil, nil, nil, nil, messaging.Retryable(err)
 		}
 	}
-	return video, job, extractJob, nil
+	return video, job, extractJob, ocrJob, nil
 }
 
 func (h *ClassifyFramesHandler) applyRetention(
@@ -312,6 +375,7 @@ func (h *ClassifyFramesHandler) markReady(
 	job *domainjob.Job,
 	items []*domainclassification.Classification,
 ) error {
+	job.SetExpectedFrameCount(len(items))
 	job.MarkSuccess()
 	if err := video.MarkClassified(job.ID, job.Type, job.Status, job.ExpectedFrameCount, toClassificationPayloads(items)); err != nil {
 		return err

@@ -86,7 +86,10 @@ func (h *ExtractFramesHandler) Handle(ctx context.Context, cmd ExtractFramesComm
 	if err != nil {
 		return err
 	}
-	if domainvideo.ExtractionAlreadyDone(video.Status) {
+	if job.Status == domainjob.StatusSuccess {
+		return nil
+	}
+	if video.Status == domainvideo.StatusExtractionFailed {
 		return nil
 	}
 	if segment.Status == domainsegment.StatusSuccess {
@@ -107,7 +110,7 @@ func (h *ExtractFramesHandler) Handle(ctx context.Context, cmd ExtractFramesComm
 		return messaging.Retryable(extractErr)
 	}
 
-	if err := h.completeSegment(ctx, video, job, segment, len(frames)); err != nil {
+	if err := h.completeSegment(ctx, video, job, segment, frames); err != nil {
 		return messaging.Retryable(err)
 	}
 	return nil
@@ -196,15 +199,19 @@ func (h *ExtractFramesHandler) extractAndStore(
 }
 
 type framePersistPool struct {
-	ctx     context.Context
-	h       *ExtractFramesHandler
-	video   *domainvideo.Video
-	segment *domainsegment.Segment
-	sem     chan struct{}
-	wg      sync.WaitGroup
-	mu      sync.Mutex
-	err     error
-	frames  []domainvideo.ExtractedFramePayload
+	ctx        context.Context
+	h          *ExtractFramesHandler
+	video      *domainvideo.Video
+	segment    *domainsegment.Segment
+	sem        chan struct{}
+	wg         sync.WaitGroup
+	mu         sync.Mutex
+	publishMu  sync.Mutex
+	err        error
+	frames     []domainvideo.ExtractedFramePayload
+	ocrJobID   uuid.UUID
+	ocrJobOnce sync.Once
+	ocrJobErr  error
 }
 
 func newFramePersistPool(
@@ -282,12 +289,49 @@ func (p *framePersistPool) Submit(item port.ExtractedFrame) error {
 			SelectionReason: frame.SelectionReason,
 			PHashDistance:   frame.PHashDistance,
 		}
+		if err := p.publishOCRRequest(payload); err != nil {
+			p.setErr(fmt.Errorf("%w: %w", errPersistFrame, err))
+			return
+		}
 		p.mu.Lock()
 		p.frames = append(p.frames, payload)
 		p.mu.Unlock()
 	}(item)
 
 	return nil
+}
+
+func (p *framePersistPool) ensureOCRJob() (uuid.UUID, error) {
+	p.ocrJobOnce.Do(func() {
+		job, err := p.h.jobRepo.GetByVideoIDAndType(p.ctx, p.video.ID, domainjob.TypeOCR)
+		if err != nil {
+			p.ocrJobErr = err
+			return
+		}
+		if job == nil {
+			job = domainjob.NewOCRJob(p.video.ID)
+			if err := p.h.jobRepo.Save(p.ctx, job); err != nil {
+				p.ocrJobErr = err
+				return
+			}
+		}
+		p.ocrJobID = job.ID
+	})
+	return p.ocrJobID, p.ocrJobErr
+}
+
+// publishOCRRequest enqueues one OCR message as soon as the frame is stored.
+func (p *framePersistPool) publishOCRRequest(payload domainvideo.ExtractedFramePayload) error {
+	ocrJobID, err := p.ensureOCRJob()
+	if err != nil {
+		return err
+	}
+	p.publishMu.Lock()
+	defer p.publishMu.Unlock()
+	p.video.RequestOCRFrames(ocrJobID, []domainvideo.ExtractedFramePayload{payload})
+	return p.h.videoRepo.WithTransaction(p.ctx, func(txCtx context.Context) error {
+		return p.h.outbox.StoreEvents(txCtx, p.video.PullEvents())
+	})
 }
 
 func (p *framePersistPool) Wait() ([]domainvideo.ExtractedFramePayload, error) {
@@ -319,14 +363,15 @@ func (h *ExtractFramesHandler) completeSegment(
 	video *domainvideo.Video,
 	job *domainjob.Job,
 	segment *domainsegment.Segment,
-	frameCount int,
+	frames []domainvideo.ExtractedFramePayload,
 ) error {
 	var (
-		allDone    bool
-		allFrames  []domainvideo.ExtractedFramePayload
-		completed  int
-		expected   int
+		allDone   bool
+		allFrames []domainvideo.ExtractedFramePayload
+		completed int
+		expected  int
 	)
+	frameCount := len(frames)
 
 	err := h.videoRepo.WithTransaction(ctx, func(txCtx context.Context) error {
 		current, err := h.segmentRepo.GetByID(txCtx, segment.ID)
@@ -336,8 +381,8 @@ func (h *ExtractFramesHandler) completeSegment(
 		if current == nil {
 			return errors.New("segment not found")
 		}
-		if current.Status == domainsegment.StatusSuccess {
-			// Already counted — still try finalize if needed.
+		alreadyDone := current.Status == domainsegment.StatusSuccess
+		if alreadyDone {
 			jobReloaded, err := h.jobRepo.GetByID(txCtx, job.ID)
 			if err != nil {
 				return err
@@ -369,7 +414,19 @@ func (h *ExtractFramesHandler) completeSegment(
 			job.CompletedSegmentCount,
 		)
 
-		if allDone && !domainvideo.ExtractionAlreadyDone(video.Status) {
+		ocrJob, err := h.jobRepo.GetByVideoIDAndType(txCtx, video.ID, domainjob.TypeOCR)
+		if err != nil {
+			return err
+		}
+		if ocrJob == nil {
+			ocrJob = domainjob.NewOCRJob(video.ID)
+			if err := h.jobRepo.Save(txCtx, ocrJob); err != nil {
+				return err
+			}
+		}
+		_ = ocrJob
+
+		if allDone && job.Status != domainjob.StatusSuccess {
 			listed, err := h.frameRepo.ListByVideoID(txCtx, video.ID)
 			if err != nil {
 				return err
@@ -382,15 +439,6 @@ func (h *ExtractFramesHandler) completeSegment(
 			}
 			if err := h.jobRepo.Update(txCtx, job); err != nil {
 				return err
-			}
-			ocrJob, err := h.jobRepo.GetByVideoIDAndType(txCtx, video.ID, domainjob.TypeOCR)
-			if err != nil {
-				return err
-			}
-			if ocrJob == nil {
-				if err := h.jobRepo.Save(txCtx, domainjob.NewOCRJob(video.ID)); err != nil {
-					return err
-				}
 			}
 		}
 
@@ -411,7 +459,7 @@ func (h *ExtractFramesHandler) completeSegment(
 }
 
 func (h *ExtractFramesHandler) maybeFinalize(ctx context.Context, video *domainvideo.Video, job *domainjob.Job) error {
-	if !job.SegmentsComplete() || domainvideo.ExtractionAlreadyDone(video.Status) {
+	if !job.SegmentsComplete() || job.Status == domainjob.StatusSuccess {
 		return nil
 	}
 	listed, err := h.frameRepo.ListByVideoID(ctx, video.ID)

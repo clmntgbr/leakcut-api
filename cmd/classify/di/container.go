@@ -68,9 +68,14 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 	)
 
 	reg := registry.NewHandlerRegistry()
+	reg.Register(domainvideo.EventTypeVideoClassifyFrameRequested, dedup.With(
+		dedupRepo,
+		"classify_frame_requested",
+		eventvideo.NewClassifyFrameRequestedHandler(classifyHandler).Handle,
+	))
 	reg.Register(domainvideo.EventTypeVideoFramesOCRCompleted, dedup.With(
 		dedupRepo,
-		"classify_frames_on_ocr_completed",
+		"classify_finalize_on_ocr_completed",
 		eventvideo.NewClassifyFramesOnOCRCompletedHandler(classifyHandler).Handle,
 	))
 
