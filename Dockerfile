@@ -59,6 +59,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -a -installsuffix cgo \
     -ldflags="-w -s" \
+    -o segment \
+    ./cmd/segment
+
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -a -installsuffix cgo \
+    -ldflags="-w -s" \
     -o classify \
     ./cmd/classify
 
@@ -79,6 +85,7 @@ COPY --from=builder --chown=appuser:appuser /app/api .
 COPY --from=builder --chown=appuser:appuser /app/worker .
 COPY --from=builder --chown=appuser:appuser /app/cli .
 COPY --from=builder --chown=appuser:appuser /app/frame .
+COPY --from=builder --chown=appuser:appuser /app/segment .
 COPY --from=builder --chown=appuser:appuser /app/classify .
 
 USER appuser

@@ -31,21 +31,25 @@ func (r *frameWriteRepository) UpsertAll(ctx context.Context, frames []*domainfr
 	if err := DBWithContext(ctx, r.db).
 		Clauses(
 			clause.OnConflict{
-				Columns:   []clause.Column{{Name: "video_id"}, {Name: "index"}},
+				Columns:   []clause.Column{{Name: "video_id"}, {Name: "segment_index"}, {Name: "index"}},
 				DoUpdates: clause.AssignmentColumns([]string{"timestamp_ms", "storage_key", "selection_reason", "phash_distance"}),
 			},
-			clause.Returning{Columns: []clause.Column{{Name: "id"}, {Name: "index"}}},
+			clause.Returning{Columns: []clause.Column{{Name: "id"}, {Name: "segment_index"}, {Name: "index"}}},
 		).
 		Create(&rows).Error; err != nil {
 		return err
 	}
 
-	byIndex := make(map[int]uuid.UUID, len(rows))
+	type key struct {
+		SegmentIndex int
+		Index        int
+	}
+	byKey := make(map[key]uuid.UUID, len(rows))
 	for i := range rows {
-		byIndex[rows[i].Index] = rows[i].ID
+		byKey[key{SegmentIndex: rows[i].SegmentIndex, Index: rows[i].Index}] = rows[i].ID
 	}
 	for _, frame := range frames {
-		if id, ok := byIndex[frame.Index]; ok {
+		if id, ok := byKey[key{SegmentIndex: frame.SegmentIndex, Index: frame.Index}]; ok {
 			frame.ID = id
 		}
 	}
@@ -74,7 +78,7 @@ func (r *frameWriteRepository) ListByVideoID(ctx context.Context, videoID uuid.U
 	var rows []FrameModel
 	if err := DBWithContext(ctx, r.db).
 		Where("video_id = ?", videoID).
-		Order(`"index" ASC`).
+		Order(`segment_index ASC, "index" ASC`).
 		Find(&rows).Error; err != nil {
 		return nil, err
 	}

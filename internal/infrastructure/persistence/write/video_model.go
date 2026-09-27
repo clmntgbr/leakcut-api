@@ -19,6 +19,7 @@ type VideoModel struct {
 	Status           string     `gorm:"column:status"`
 	CreatedAt        time.Time  `gorm:"column:created_at"`
 	UpdatedAt        time.Time  `gorm:"column:updated_at"`
+	FinishedAt       *time.Time `gorm:"column:finished_at"`
 }
 
 func (VideoModel) TableName() string {
@@ -37,6 +38,7 @@ func videoModelFromDomain(v *domainvideo.Video) *VideoModel {
 		Status:           v.Status,
 		CreatedAt:        v.CreatedAt,
 		UpdatedAt:        v.UpdatedAt,
+		FinishedAt:       v.FinishedAt,
 	}
 }
 
@@ -52,5 +54,6 @@ func videoDomainFromModel(m *VideoModel) *domainvideo.Video {
 		Status:           m.Status,
 		CreatedAt:        m.CreatedAt,
 		UpdatedAt:        m.UpdatedAt,
+		FinishedAt:       m.FinishedAt,
 	}
 }

@@ -16,27 +16,45 @@ import (
 )
 
 type videoViewRow struct {
-	ID                    uuid.UUID
-	OriginalFilename      string
-	StorageKey            string
-	ThumbnailKey          string
-	SizeBytes             int64
-	ContentType           string
-	Status                string
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
-	ExtractJobID          *uuid.UUID
-	ExtractJobStatus      string
-	ExtractFailureReason  string
-	OCRJobID              *uuid.UUID
-	OCRJobStatus          string
-	OCRFailureReason      string
-	ClassifyJobID         *uuid.UUID
-	ClassifyJobStatus     string
-	ClassifyFailureReason string
-	FrameCount            int
-	ExpectedFrameCount    int
-	OCRCompletedCount     int
+	ID                      uuid.UUID
+	OriginalFilename        string
+	StorageKey              string
+	ThumbnailKey            string
+	SizeBytes               int64
+	ContentType             string
+	Status                  string
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
+	FinishedAt              *time.Time
+	SegmentJobID            *uuid.UUID
+	SegmentJobStatus        string
+	SegmentFailureReason    string
+	SegmentCreatedAt        time.Time
+	SegmentStartedAt        *time.Time
+	SegmentFinishedAt       *time.Time
+	ExpectedSegmentCount    int
+	CompletedSegmentCount   int
+	ExtractJobID            *uuid.UUID
+	ExtractJobStatus        string
+	ExtractFailureReason    string
+	ExtractCreatedAt        time.Time
+	ExtractStartedAt        *time.Time
+	ExtractFinishedAt       *time.Time
+	OCRJobID                *uuid.UUID
+	OCRJobStatus            string
+	OCRFailureReason        string
+	OCRCreatedAt            time.Time
+	OCRStartedAt            *time.Time
+	OCRFinishedAt           *time.Time
+	ClassifyJobID           *uuid.UUID
+	ClassifyJobStatus       string
+	ClassifyFailureReason   string
+	ClassifyCreatedAt       time.Time
+	ClassifyStartedAt       *time.Time
+	ClassifyFinishedAt      *time.Time
+	FrameCount              int
+	ExpectedFrameCount      int
+	OCRCompletedCount       int
 }
 
 func (videoViewRow) TableName() string { return "videos" }
@@ -63,19 +81,38 @@ func (r *videoReadRepository) FindByID(ctx context.Context, id, userID uuid.UUID
 			videos.status,
 			videos.created_at,
 			videos.updated_at,
+			videos.finished_at,
+			segment_jobs.id AS segment_job_id,
+			segment_jobs.status AS segment_job_status,
+			segment_jobs.failure_reason AS segment_failure_reason,
+			segment_jobs.created_at AS segment_created_at,
+			segment_jobs.started_at AS segment_started_at,
+			segment_jobs.finished_at AS segment_finished_at,
+			COALESCE(segment_jobs.expected_segment_count, extract_jobs.expected_segment_count, 0) AS expected_segment_count,
+			COALESCE(extract_jobs.completed_segment_count, 0) AS completed_segment_count,
 			extract_jobs.id AS extract_job_id,
 			extract_jobs.status AS extract_job_status,
 			extract_jobs.failure_reason AS extract_failure_reason,
+			extract_jobs.created_at AS extract_created_at,
+			extract_jobs.started_at AS extract_started_at,
+			extract_jobs.finished_at AS extract_finished_at,
 			ocr_jobs.id AS ocr_job_id,
 			ocr_jobs.status AS ocr_job_status,
 			ocr_jobs.failure_reason AS ocr_failure_reason,
+			ocr_jobs.created_at AS ocr_created_at,
+			ocr_jobs.started_at AS ocr_started_at,
+			ocr_jobs.finished_at AS ocr_finished_at,
 			classify_jobs.id AS classify_job_id,
 			classify_jobs.status AS classify_job_status,
 			classify_jobs.failure_reason AS classify_failure_reason,
+			classify_jobs.created_at AS classify_created_at,
+			classify_jobs.started_at AS classify_started_at,
+			classify_jobs.finished_at AS classify_finished_at,
 			COALESCE(ocr_jobs.expected_frame_count, 0) AS expected_frame_count,
 			COALESCE(ocr_jobs.ocr_completed_count, 0) AS ocr_completed_count,
 			COALESCE((SELECT COUNT(*) FROM frames WHERE frames.video_id = videos.id), 0) AS frame_count
 		`).
+		Joins("LEFT JOIN jobs segment_jobs ON segment_jobs.video_id = videos.id AND segment_jobs.type = ?", domainjob.TypeSegment).
 		Joins("LEFT JOIN jobs extract_jobs ON extract_jobs.video_id = videos.id AND extract_jobs.type = ?", domainjob.TypeFrame).
 		Joins("LEFT JOIN jobs ocr_jobs ON ocr_jobs.video_id = videos.id AND ocr_jobs.type = ?", domainjob.TypeOCR).
 		Joins("LEFT JOIN jobs classify_jobs ON classify_jobs.video_id = videos.id AND classify_jobs.type = ?", domainjob.TypeClassify).
@@ -92,14 +129,31 @@ func (r *videoReadRepository) FindByID(ctx context.Context, id, userID uuid.UUID
 }
 
 func videoViewFromRow(row videoViewRow) *domainvideo.VideoView {
-	jobs := make([]domainvideo.JobView, 0, 3)
+	jobs := make([]domainvideo.JobView, 0, 4)
+	if row.SegmentJobID != nil {
+		jobs = append(jobs, domainvideo.JobView{
+			ID:                   *row.SegmentJobID,
+			Type:                 domainjob.TypeSegment,
+			Status:               row.SegmentJobStatus,
+			ExpectedSegmentCount: row.ExpectedSegmentCount,
+			FailureReason:        row.SegmentFailureReason,
+			CreatedAt:            row.SegmentCreatedAt,
+			StartedAt:            row.SegmentStartedAt,
+			FinishedAt:           row.SegmentFinishedAt,
+		})
+	}
 	if row.ExtractJobID != nil {
 		jobs = append(jobs, domainvideo.JobView{
-			ID:            *row.ExtractJobID,
-			Type:          domainjob.TypeFrame,
-			Status:        row.ExtractJobStatus,
-			FrameCount:    row.FrameCount,
-			FailureReason: row.ExtractFailureReason,
+			ID:                    *row.ExtractJobID,
+			Type:                  domainjob.TypeFrame,
+			Status:                row.ExtractJobStatus,
+			FrameCount:            row.FrameCount,
+			ExpectedSegmentCount:  row.ExpectedSegmentCount,
+			CompletedSegmentCount: row.CompletedSegmentCount,
+			FailureReason:         row.ExtractFailureReason,
+			CreatedAt:             row.ExtractCreatedAt,
+			StartedAt:             row.ExtractStartedAt,
+			FinishedAt:            row.ExtractFinishedAt,
 		})
 	}
 	if row.OCRJobID != nil {
@@ -110,6 +164,9 @@ func videoViewFromRow(row videoViewRow) *domainvideo.VideoView {
 			ExpectedFrameCount: row.ExpectedFrameCount,
 			OCRCompletedCount:  row.OCRCompletedCount,
 			FailureReason:      row.OCRFailureReason,
+			CreatedAt:          row.OCRCreatedAt,
+			StartedAt:          row.OCRStartedAt,
+			FinishedAt:         row.OCRFinishedAt,
 		})
 	}
 	if row.ClassifyJobID != nil {
@@ -118,12 +175,20 @@ func videoViewFromRow(row videoViewRow) *domainvideo.VideoView {
 			Type:          domainjob.TypeClassify,
 			Status:        row.ClassifyJobStatus,
 			FailureReason: row.ClassifyFailureReason,
+			CreatedAt:     row.ClassifyCreatedAt,
+			StartedAt:     row.ClassifyStartedAt,
+			FinishedAt:    row.ClassifyFinishedAt,
 		})
 	}
 
-	currentID := row.ExtractJobID
-	currentStatus := row.ExtractJobStatus
-	failureReason := row.ExtractFailureReason
+	currentID := row.SegmentJobID
+	currentStatus := row.SegmentJobStatus
+	failureReason := row.SegmentFailureReason
+	if row.ExtractJobID != nil {
+		currentID = row.ExtractJobID
+		currentStatus = row.ExtractJobStatus
+		failureReason = row.ExtractFailureReason
+	}
 	if row.OCRJobID != nil {
 		currentID = row.OCRJobID
 		currentStatus = row.OCRJobStatus
@@ -145,6 +210,7 @@ func videoViewFromRow(row videoViewRow) *domainvideo.VideoView {
 		Status:             row.Status,
 		CreatedAt:          row.CreatedAt,
 		UpdatedAt:          row.UpdatedAt,
+		FinishedAt:         row.FinishedAt,
 		JobID:              currentID,
 		JobStatus:          currentStatus,
 		FrameCount:         row.FrameCount,
@@ -262,7 +328,7 @@ func (r *videoReadRepository) ListFramesByVideoID(ctx context.Context, id, userI
 		Joins("LEFT JOIN ocrs ON ocrs.frame_id = frames.id").
 		Joins("LEFT JOIN classifications ON classifications.frame_id = frames.id").
 		Where("videos.id = ? AND videos.user_id = ?", id, userID).
-		Order("frames.index ASC").
+		Order("frames.segment_index ASC, frames.index ASC").
 		Find(&rows).Error
 	if err != nil {
 		return nil, err

@@ -5,20 +5,20 @@ COMPOSE_DEV := docker compose -f compose.dev.yaml
 # ============================================
 
 dev:
-	$(COMPOSE_DEV) up -d --scale ocr=4 --scale frame=1 --scale classify=1
+	$(COMPOSE_DEV) up -d --scale ocr=3 --scale frame=3 --scale classify=3 --scale segment=3
 
 dev-restart:
 	$(COMPOSE_DEV) down
-	$(COMPOSE_DEV) up -d --scale ocr=4 --scale frame=1 --scale classify=1
+	$(COMPOSE_DEV) up -d --scale ocr=3 --scale frame=3 --scale classify=3 --scale segment=3
 
 build:
-	$(COMPOSE_DEV) up -d --build --scale ocr=4 --scale frame=1 --scale classify=1
+	$(COMPOSE_DEV) up -d --build --scale ocr=3 --scale frame=3 --scale classify=3 --scale segment=3
 
 dev-down:
 	$(COMPOSE_DEV) down
 
 dev-logs:
-	$(COMPOSE_DEV) logs -f api worker frame ocr classify
+	$(COMPOSE_DEV) logs -f api worker frame ocr classify segment
 
 api-logs:
 	$(COMPOSE_DEV) logs -f api
@@ -42,7 +42,7 @@ classify-logs:
 	$(COMPOSE_DEV) logs -f classify
 
 restart:
-	$(COMPOSE_DEV) restart api worker frame ocr classify
+	$(COMPOSE_DEV) restart api worker frame ocr classify segment
 
 lint:
 	$(COMPOSE_DEV) exec api golangci-lint run --fix

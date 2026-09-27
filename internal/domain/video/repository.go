@@ -26,13 +26,18 @@ type VideoReadRepository interface {
 }
 
 type JobView struct {
-	ID                 uuid.UUID
-	Type               string
-	Status             string
-	FrameCount         int
-	ExpectedFrameCount int
-	OCRCompletedCount  int
-	FailureReason      string
+	ID                    uuid.UUID
+	Type                  string
+	Status                string
+	FrameCount            int
+	ExpectedFrameCount    int
+	OCRCompletedCount     int
+	ExpectedSegmentCount  int
+	CompletedSegmentCount int
+	FailureReason         string
+	CreatedAt             time.Time
+	StartedAt             *time.Time
+	FinishedAt            *time.Time
 }
 
 type VideoView struct {
@@ -47,6 +52,7 @@ type VideoView struct {
 	Status             string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+	FinishedAt         *time.Time
 	JobID              *uuid.UUID
 	JobStatus          string
 	FrameCount         int

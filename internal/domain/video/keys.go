@@ -35,8 +35,12 @@ func NewStorageKey(videoID uuid.UUID) string {
 	return "videos/" + videoID.String() + "/" + OriginalObjectName
 }
 
-func NewFrameStorageKey(videoID uuid.UUID, index int) string {
-	return fmt.Sprintf("frames/%s/frame_%06d.jpg", videoID.String(), index)
+func NewFrameStorageKey(videoID uuid.UUID, segmentIndex, localIndex int) string {
+	return fmt.Sprintf("frames/%s/%02d_%04d.jpg", videoID.String(), segmentIndex, localIndex)
+}
+
+func NewSegmentStorageKey(videoID uuid.UUID, segmentIndex int) string {
+	return fmt.Sprintf("videos/%s/segments/segment_%02d.mp4", videoID.String(), segmentIndex)
 }
 
 func NewThumbnailStorageKey(videoID uuid.UUID) string {

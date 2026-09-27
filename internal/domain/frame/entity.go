@@ -12,6 +12,7 @@ const (
 type Frame struct {
 	ID              uuid.UUID
 	VideoID         uuid.UUID
+	SegmentIndex    int
 	Index           int
 	TimestampMs     int64
 	StorageKey      string
@@ -23,7 +24,7 @@ type Frame struct {
 
 func NewFrame(
 	videoID uuid.UUID,
-	index int,
+	segmentIndex, index int,
 	timestampMs int64,
 	storageKey, selectionReason string,
 	phashDistance int,
@@ -31,6 +32,7 @@ func NewFrame(
 	return &Frame{
 		ID:              uuid.New(),
 		VideoID:         videoID,
+		SegmentIndex:    segmentIndex,
 		Index:           index,
 		TimestampMs:     timestampMs,
 		StorageKey:      storageKey,

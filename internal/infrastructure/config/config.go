@@ -53,6 +53,10 @@ type Config struct {
 	FrameExtractionTimeout  time.Duration
 	FrameMaxWidthPx         int
 	FrameUploadConcurrency  int
+	SegmentQueue            string
+	SegmentRoutingKey       string
+	SegmentConcurrency      int
+	SegmentTimeout          time.Duration
 	ExpireUploadsInterval   time.Duration
 	VideoMaxSizeBytes       int64
 	OCRQueue                string
@@ -113,15 +117,19 @@ func Load() *Config {
 		VideoIngestAllowedHosts: splitCSV(getEnvOrDefault("VIDEO_INGEST_ALLOWED_HOSTS", "")),
 		UploadURLTTL:            getEnvDuration("UPLOAD_URL_TTL", 15*time.Minute),
 		FrameQueue:              getEnvOrDefault("FRAME_QUEUE", "frame"),
-		FrameRoutingKey:         getEnvOrDefault("FRAME_ROUTING_KEY", "video.uploaded.v1"),
+		FrameRoutingKey:         getEnvOrDefault("FRAME_ROUTING_KEY", "video.segment_ready.v1"),
 		FrameConcurrency:        getEnvIntOrDefault("FRAME_CONCURRENCY", 2),
 		FrameExtractionTimeout:  getEnvDuration("FRAME_EXTRACTION_TIMEOUT", 10*time.Minute),
 		FrameMaxWidthPx:         getEnvIntOrDefault("FRAME_MAX_WIDTH_PX", 960),
 		FrameUploadConcurrency:  getEnvIntOrDefault("FRAME_UPLOAD_CONCURRENCY", 4),
+		SegmentQueue:            getEnvOrDefault("SEGMENT_QUEUE", "segment"),
+		SegmentRoutingKey:       getEnvOrDefault("SEGMENT_ROUTING_KEY", "video.uploaded.v1"),
+		SegmentConcurrency:      getEnvIntOrDefault("SEGMENT_CONCURRENCY", 2),
+		SegmentTimeout:          getEnvDuration("SEGMENT_TIMEOUT", 10*time.Minute),
 		ExpireUploadsInterval:   getEnvDuration("EXPIRE_UPLOADS_INTERVAL", time.Minute),
 		VideoMaxSizeBytes:       getEnvInt64OrDefault("VIDEO_MAX_SIZE_BYTES", 2*1024*1024*1024),
 		OCRQueue:                getEnvOrDefault("OCR_QUEUE", "ocr"),
-		OCRRoutingKey:           getEnvOrDefault("OCR_ROUTING_KEY", "video.frames_extracted.v1"),
+		OCRRoutingKey:           getEnvOrDefault("OCR_ROUTING_KEY", "video.ocr_frame_requested.v1"),
 		OCRMinConfidence:        getEnvFloatOrDefault("OCR_MIN_CONFIDENCE", 0.5),
 		OCRLang:                 getEnvOrDefault("OCR_LANG", "fr+en"),
 		ClassifyQueue:           getEnvOrDefault("CLASSIFY_QUEUE", "classify"),

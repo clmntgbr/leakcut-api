@@ -147,7 +147,7 @@ func TestStorageWebhookHandler_ObjectCreated_SkipFrameKey(t *testing.T) {
 	confirm := &mockConfirmUploadHandler{}
 	h := newHandler(confirm)
 
-	resp := postWebhook(t, h, objectCreated(domainvideo.NewFrameStorageKey(testutil.TestVideoID, 0), testBucket))
+	resp := postWebhook(t, h, objectCreated(domainvideo.NewFrameStorageKey(testutil.TestVideoID, 0, 0), testBucket))
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status: got %d want %d", resp.StatusCode, http.StatusOK)
 	}

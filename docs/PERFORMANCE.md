@@ -11,8 +11,9 @@ Keep the pipeline cheap on long videos without dropping screens that might conta
 | `max_interval_seconds` | `15` | Safety net on a static screen |
 | `FRAME_MAX_WIDTH_PX` | `960` | ffmpeg scale at extract (OCR sees the same JPEG) |
 | `FRAME_UPLOAD_CONCURRENCY` | `4` | Parallel MinIO puts during extract |
-| `--scale ocr=N` | `2` | Competing consumers on `video.frames_extracted.v1` (one video each) |
-| `OCR_CONCURRENCY` | `1` | RabbitMQ prefetch per OCR replica |
+| `--scale frame=N` | `2` | Parallel segment extract on one video |
+| `--scale ocr=N` | `2` | Competing consumers on `video.ocr_frame_requested.v1` (one frame each) |
+| `OCR_CONCURRENCY` | `2` | RabbitMQ prefetch per OCR replica |
 
 A previous 5-minute clip at ~1.6 fps / 8% produced ~490 frames. Pixel luminance also missed same-dark-theme scene changes. pHash (default 14) targets ~40–60 keeps on a 5-minute clip. If volume is still high, raise the threshold (16, 18, 20); if a scene is missed, lower it (12, 10). There is no pre-OCR “has text?” gate — false negatives would skip real leaks.
 
@@ -31,9 +32,9 @@ docker compose -f compose.dev.yaml up --scale ocr=2 --scale frame=2 --scale clas
 
 ## Incremental OCR
 
-ffmpeg streams candidates. Each retained frame is uploaded in a small pool and upserted — no per-frame outbox. One `video.frames_extracted.v1` starts OCR for the whole video.
+ffmpeg streams candidates **per segment**. Each retained frame is uploaded in a small pool and upserted — no per-frame outbox at extract. When all segments finish, `video.frames_extracted.v1` triggers OCR Start, which writes **one outbox row per frame** (`video.ocr_frame_requested.v1`). OCR replicas compete on that queue.
 
-Outbox poll is `OUTBOX_POLL_INTERVAL` (default `2s`). That is the delay between “frame stored” and “an OCR replica receives it”.
+Outbox poll is `OUTBOX_POLL_INTERVAL` (default `2s`). That is the delay between “OCR Start committed” and “replicas begin pulling frames”.
 
 ## What not to do
 

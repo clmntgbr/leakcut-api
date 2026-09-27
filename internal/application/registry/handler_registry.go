@@ -3,7 +3,6 @@ package registry
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 )
 
@@ -30,7 +29,6 @@ func (r *HandlerRegistry) Dispatch(ctx context.Context, eventType string, payloa
 	r.mu.RUnlock()
 
 	if len(handlers) == 0 {
-		log.Printf("no handler registered for event_type=%s", eventType)
 		return nil
 	}
 

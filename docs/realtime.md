@@ -27,13 +27,15 @@ Requires authentication.
 | `user.deleted` | User deleted |
 | `video.created` | Video created (`pending_upload`) |
 | `video.uploaded` | Upload confirmed (`extraction_queued`) |
-| `job.updated` | Job moved to `processing`, `success`, or `failed` (also after each OCR batch, with `ocrCompletedCount`). Use `jobType` (`frame` / `ocr` / `classify`) to know which stage. |
+| `job.updated` | Job moved to `processing`, `success`, or `failed` (also after each OCR batch, with `ocrCompletedCount`). Use `jobType` (`segment` / `frame` / `ocr` / `classify`) to know which stage. |
 
 Video/job events are published only to the owner (`users:<userId>`). Webhook-ingested videos without a user are not pushed.
 
 ```json
 { "type": "video.created", "videoId": "...", "originalFilename": "demo.mp4", "status": "pending_upload", "occurredAt": "..." }
 { "type": "video.uploaded", "videoId": "...", "status": "extraction_queued", "occurredAt": "..." }
+{ "type": "job.updated", "id": "...", "videoId": "...", "jobType": "segment", "status": "processing", "videoStatus": "extracting", "occurredAt": "..." }
+{ "type": "job.updated", "id": "...", "videoId": "...", "jobType": "segment", "status": "success", "videoStatus": "extracting", "expectedSegmentCount": 3, "occurredAt": "..." }
 { "type": "job.updated", "id": "...", "videoId": "...", "jobType": "frame", "status": "processing", "videoStatus": "extracting", "frameCount": 0, "occurredAt": "..." }
 { "type": "job.updated", "id": "...", "videoId": "...", "jobType": "frame", "status": "success", "videoStatus": "frames_ready", "frameCount": 12, "occurredAt": "..." }
 { "type": "job.updated", "id": "...", "videoId": "...", "jobType": "ocr", "status": "processing", "videoStatus": "ocr_processing", "expectedFrameCount": 12, "ocrCompletedCount": 0, "occurredAt": "..." }

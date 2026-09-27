@@ -20,6 +20,7 @@ type Video struct {
 	Status           string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	FinishedAt       *time.Time
 
 	events []event.DomainEvent
 }
@@ -190,6 +191,44 @@ func (v *Video) MarkExtracting(jobID uuid.UUID, jobType, jobStatus string) error
 	}
 }
 
+func (v *Video) RecordSegmentReady(
+	jobID, segmentID uuid.UUID,
+	segmentIndex int,
+	offsetMs, durationMs int64,
+	storageKey string,
+) {
+	v.recordEvent(VideoSegmentReady{
+		ID:           uuid.New().String(),
+		VideoID:      v.ID.String(),
+		UserID:       v.ownerUserID(),
+		JobID:        jobID.String(),
+		SegmentID:    segmentID.String(),
+		SegmentIndex: segmentIndex,
+		OffsetMs:     offsetMs,
+		DurationMs:   durationMs,
+		StorageKey:   storageKey,
+		Timestamp:    time.Now().UTC(),
+	})
+}
+
+func (v *Video) RecordSegmentFramesExtracted(
+	jobID, segmentID uuid.UUID,
+	segmentIndex, frameCount, expectedSegments, completedSegments int,
+) {
+	v.recordEvent(VideoSegmentFramesExtracted{
+		ID:                    uuid.New().String(),
+		VideoID:               v.ID.String(),
+		UserID:                v.ownerUserID(),
+		JobID:                 jobID.String(),
+		SegmentID:             segmentID.String(),
+		SegmentIndex:          segmentIndex,
+		FrameCount:            frameCount,
+		ExpectedSegmentCount:  expectedSegments,
+		CompletedSegmentCount: completedSegments,
+		Timestamp:             time.Now().UTC(),
+	})
+}
+
 func (v *Video) MarkFramesReady(jobID uuid.UUID, jobType, jobStatus string, frames []ExtractedFramePayload) error {
 	if v.Status != StatusExtracting && v.Status != StatusExtractionQueued && v.Status != StatusUploaded {
 		if v.Status == StatusFramesReady {
@@ -273,6 +312,28 @@ func (v *Video) MarkOCRProcessing(jobID uuid.UUID, jobType, jobStatus string, ex
 		return nil
 	default:
 		return ErrInvalidTransition
+	}
+}
+
+// RequestOCRFrames enqueues one outbox message per frame for competing OCR consumers.
+func (v *Video) RequestOCRFrames(jobID uuid.UUID, frames []ExtractedFramePayload) {
+	if len(frames) == 0 {
+		return
+	}
+	now := time.Now().UTC()
+	userID := v.ownerUserID()
+	for _, frame := range frames {
+		v.recordEvent(VideoOCRFrameRequested{
+			ID:          uuid.New().String(),
+			VideoID:     v.ID.String(),
+			UserID:      userID,
+			JobID:       jobID.String(),
+			FrameID:     frame.ID,
+			FrameIndex:  frame.Index,
+			TimestampMs: frame.TimestampMs,
+			StorageKey:  frame.StorageKey,
+			Timestamp:   now,
+		})
 	}
 }
 
@@ -389,6 +450,7 @@ func (v *Video) MarkClassified(jobID uuid.UUID, jobType, jobStatus string, expec
 	now := time.Now().UTC()
 	v.Status = StatusClassified
 	v.UpdatedAt = now
+	v.FinishedAt = &now
 	v.recordEvent(VideoFramesClassified{
 		ID:                 uuid.New().String(),
 		VideoID:            v.ID.String(),

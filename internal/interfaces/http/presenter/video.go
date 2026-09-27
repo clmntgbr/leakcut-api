@@ -49,6 +49,7 @@ type VideoDetailResponse struct {
 	Frames             []VideoFrameResponse `json:"frames"`
 	CreatedAt          time.Time            `json:"createdAt"`
 	UpdatedAt          time.Time            `json:"updatedAt"`
+	FinishedAt         *time.Time           `json:"finishedAt"`
 }
 
 type VideoFrameResponse struct {
@@ -95,13 +96,18 @@ type VideoClassificationResponse struct {
 }
 
 type VideoJobResponse struct {
-	ID                 string  `json:"id"`
-	Type               string  `json:"type"`
-	Status             string  `json:"status"`
-	FrameCount         int     `json:"frameCount"`
-	ExpectedFrameCount int     `json:"expectedFrameCount"`
-	OCRCompletedCount  int     `json:"ocrCompletedCount"`
-	FailureReason      *string `json:"failureReason,omitempty"`
+	ID                    string     `json:"id"`
+	Type                  string     `json:"type"`
+	Status                string     `json:"status"`
+	FrameCount            int        `json:"frameCount"`
+	ExpectedFrameCount    int        `json:"expectedFrameCount"`
+	OCRCompletedCount     int        `json:"ocrCompletedCount"`
+	ExpectedSegmentCount  int        `json:"expectedSegmentCount"`
+	CompletedSegmentCount int        `json:"completedSegmentCount"`
+	FailureReason         *string    `json:"failureReason,omitempty"`
+	CreatedAt             time.Time  `json:"createdAt"`
+	StartedAt             *time.Time `json:"startedAt"`
+	FinishedAt            *time.Time `json:"finishedAt"`
 }
 
 type VideoListItemResponse struct {
@@ -147,6 +153,7 @@ func NewVideoDetailResponseFromView(view domainvideo.VideoView) VideoDetailRespo
 		Frames:             newVideoFrameResponses(view.Frames),
 		CreatedAt:          view.CreatedAt,
 		UpdatedAt:          view.UpdatedAt,
+		FinishedAt:         view.FinishedAt,
 	}
 }
 
@@ -215,13 +222,18 @@ func newVideoJobResponses(views []domainvideo.JobView) []VideoJobResponse {
 	out := make([]VideoJobResponse, 0, len(views))
 	for _, job := range views {
 		out = append(out, VideoJobResponse{
-			ID:                 job.ID.String(),
-			Type:               job.Type,
-			Status:             job.Status,
-			FrameCount:         job.FrameCount,
-			ExpectedFrameCount: job.ExpectedFrameCount,
-			OCRCompletedCount:  job.OCRCompletedCount,
-			FailureReason:      optionalNonEmptyString(job.FailureReason),
+			ID:                    job.ID.String(),
+			Type:                  job.Type,
+			Status:                job.Status,
+			FrameCount:            job.FrameCount,
+			ExpectedFrameCount:    job.ExpectedFrameCount,
+			OCRCompletedCount:     job.OCRCompletedCount,
+			ExpectedSegmentCount:  job.ExpectedSegmentCount,
+			CompletedSegmentCount: job.CompletedSegmentCount,
+			FailureReason:         optionalNonEmptyString(job.FailureReason),
+			CreatedAt:             job.CreatedAt,
+			StartedAt:             job.StartedAt,
+			FinishedAt:            job.FinishedAt,
 		})
 	}
 	return out

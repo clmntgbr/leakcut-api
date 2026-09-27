@@ -7,9 +7,12 @@ const (
 	EventTypeVideoIngestRequested       = "video.ingest_requested.v1"
 	EventTypeVideoUploaded              = "video.uploaded.v1"
 	EventTypeVideoExtracting            = "video.extracting.v1"
+	EventTypeVideoSegmentReady          = "video.segment_ready.v1"
+	EventTypeVideoSegmentFramesExtracted = "video.segment_frames_extracted.v1"
 	EventTypeVideoFramesExtracted       = "video.frames_extracted.v1"
 	EventTypeVideoFrameExtractionFailed = "video.frame_extraction_failed.v1"
 	EventTypeVideoOCRProcessing         = "video.ocr_processing.v1"
+	EventTypeVideoOCRFrameRequested     = "video.ocr_frame_requested.v1"
 	EventTypeVideoOCRBatchCompleted     = "video.ocr_batch_completed.v1"
 	EventTypeVideoFramesOCRCompleted    = "video.frames_ocr_completed.v1"
 	EventTypeVideoOCRFailed             = "video.ocr_failed.v1"
@@ -79,6 +82,42 @@ func (e VideoExtracting) EventType() string     { return EventTypeVideoExtractin
 func (e VideoExtracting) AggregateID() string   { return e.VideoID }
 func (e VideoExtracting) OccurredAt() time.Time { return e.Timestamp }
 
+type VideoSegmentReady struct {
+	ID           string    `json:"eventId"`
+	VideoID      string    `json:"videoId"`
+	UserID       string    `json:"userId,omitempty"`
+	JobID        string    `json:"jobId"`
+	SegmentID    string    `json:"segmentId"`
+	SegmentIndex int       `json:"segmentIndex"`
+	OffsetMs     int64     `json:"offsetMs"`
+	DurationMs   int64     `json:"durationMs"`
+	StorageKey   string    `json:"storageKey"`
+	Timestamp    time.Time `json:"timestamp"`
+}
+
+func (e VideoSegmentReady) EventID() string       { return e.ID }
+func (e VideoSegmentReady) EventType() string     { return EventTypeVideoSegmentReady }
+func (e VideoSegmentReady) AggregateID() string   { return e.VideoID }
+func (e VideoSegmentReady) OccurredAt() time.Time { return e.Timestamp }
+
+type VideoSegmentFramesExtracted struct {
+	ID                    string    `json:"eventId"`
+	VideoID               string    `json:"videoId"`
+	UserID                string    `json:"userId,omitempty"`
+	JobID                 string    `json:"jobId"`
+	SegmentID             string    `json:"segmentId"`
+	SegmentIndex          int       `json:"segmentIndex"`
+	FrameCount            int       `json:"frameCount"`
+	ExpectedSegmentCount  int       `json:"expectedSegmentCount"`
+	CompletedSegmentCount int       `json:"completedSegmentCount"`
+	Timestamp             time.Time `json:"timestamp"`
+}
+
+func (e VideoSegmentFramesExtracted) EventID() string       { return e.ID }
+func (e VideoSegmentFramesExtracted) EventType() string     { return EventTypeVideoSegmentFramesExtracted }
+func (e VideoSegmentFramesExtracted) AggregateID() string   { return e.VideoID }
+func (e VideoSegmentFramesExtracted) OccurredAt() time.Time { return e.Timestamp }
+
 type ExtractedFramePayload struct {
 	ID              string `json:"id,omitempty"`
 	Index           int    `json:"index"`
@@ -140,6 +179,23 @@ func (e VideoOCRProcessing) EventID() string       { return e.ID }
 func (e VideoOCRProcessing) EventType() string     { return EventTypeVideoOCRProcessing }
 func (e VideoOCRProcessing) AggregateID() string   { return e.VideoID }
 func (e VideoOCRProcessing) OccurredAt() time.Time { return e.Timestamp }
+
+type VideoOCRFrameRequested struct {
+	ID          string    `json:"eventId"`
+	VideoID     string    `json:"videoId"`
+	UserID      string    `json:"userId,omitempty"`
+	JobID       string    `json:"jobId"`
+	FrameID     string    `json:"frameId"`
+	FrameIndex  int       `json:"frameIndex"`
+	TimestampMs int64     `json:"timestampMs"`
+	StorageKey  string    `json:"storageKey"`
+	Timestamp   time.Time `json:"timestamp"`
+}
+
+func (e VideoOCRFrameRequested) EventID() string       { return e.ID }
+func (e VideoOCRFrameRequested) EventType() string     { return EventTypeVideoOCRFrameRequested }
+func (e VideoOCRFrameRequested) AggregateID() string   { return e.VideoID }
+func (e VideoOCRFrameRequested) OccurredAt() time.Time { return e.Timestamp }
 
 type VideoOCRBatchCompleted struct {
 	ID        string                  `json:"eventId"`

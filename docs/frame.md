@@ -2,7 +2,7 @@
 
 ## Overview
 
-Ingest a video, then the `frame` worker cuts it into retained stills. OCR and classify are downstream — see [ocr](ocr.md) and [classify](classify.md).
+Ingest a video, then **segment** slices it and **frame** workers extract stills in parallel. OCR and classify are downstream — see [segment](segment.md), [ocr](ocr.md) and [classify](classify.md).
 
 Two ingest paths:
 
@@ -12,9 +12,10 @@ Two ingest paths:
 ```
 client → POST /api/videos/upload-url → MinIO PUT
 MinIO → POST /webhooks/minio/object-created → outbox video.uploaded.v1
-     → queue frame → extract (upload + upsert frames only)
-                  → video.frames_extracted.v1 (one outbox event)
-     → queue ocr → OCR all frames → video.ocr_batch_completed.v1
+     → queue segment → plan/split → video.segment_ready.v1 × N
+     → queue frame → extract per segment (upload + upsert frames)
+                  → when all segments done → video.frames_extracted.v1
+     → queue ocr → one message per frame → RapidOCR → video.ocr_batch_completed.v1
 ```
 
 ## HTTP routes
@@ -34,13 +35,13 @@ MinIO → POST /webhooks/minio/object-created → outbox video.uploaded.v1
 | Video status | When |
 |--------------|------|
 | `pending_upload` | Presigned URL issued |
-| `extraction_queued` | Upload confirmed, `frame` job created |
-| `extracting` | `frame` worker started |
+| `extraction_queued` | Upload confirmed, `segment` job created |
+| `extracting` | `segment` worker splitting (then `frame` workers extract) |
 | `frames_ready` | Retained frames stored; OCR may already be running |
 | `extraction_failed` | Unreadable video / ffmpeg / timeout |
 | `upload_expired` | No PUT before the URL TTL |
 
-Jobs use shared statuses (`pending` / `processing` / `success` / `failed`) plus `type` (`frame` / `ocr` / `classify`). Video statuses above are the pipeline cursor; later ones (`ocr_*`, `classifying`, `classified`) are in [ocr](ocr.md) and [classify](classify.md).
+Jobs use shared statuses (`pending` / `processing` / `success` / `failed`) plus `type` (`segment` / `frame` / `ocr` / `classify`). Each job exposes `createdAt`, `startedAt`, and `finishedAt` so clients can measure step duration (`finishedAt - startedAt`). The video itself has `finishedAt` when classify completes. Video statuses above are the pipeline cursor; later ones (`ocr_*`, `classifying`, `classified`) are in [ocr](ocr.md) and [classify](classify.md).
 
 `GET /api/videos/:id` embeds `jobs[]` and `frames[]`. Each frame carries `ocrText` / `ocrLines` (`box` in JPEG pixels) / `ocrStatus`, optional `classification`, plus `retained` / `pruneReason` after classify ([retention](retention.md)). Presigned `videoUrl`, `thumbnailUrl`, and `imageUrl` expire with the storage TTL; pruned frames have `imageUrl: null`.
 
@@ -70,23 +71,25 @@ OCR starts from that video-level event (see [ocr](ocr.md)).
 media/
   videos/{video_id}/original.mp4
   videos/{video_id}/thumbnail.jpg
-  videos/{video_id}/frames/{index}.jpg
+  videos/{video_id}/segments/segment_{ii}.mp4   # temporary when split
+  frames/{video_id}/{segment:02d}_{local:04d}.jpg
 ```
 
 ## Errors
 
 - Corrupt / unsupported codec → `extraction_failed`, DLQ after retries.
-- Timeout → same, configurable `FRAME_EXTRACTION_TIMEOUT`.
-- Redelivery → upsert `(video_id, index)` and overwrite the JPEG. pHash is always against the last kept frame.
+- Timeout → same, configurable `FRAME_EXTRACTION_TIMEOUT` / `SEGMENT_TIMEOUT`.
+- Redelivery → upsert `(video_id, segment_index, index)` and overwrite the JPEG. pHash resets per segment.
 
 ## Code map
 
 | Piece | Location |
 |-------|----------|
-| Worker | `cmd/frame` — queue `frame`, routing `video.uploaded.v1` |
-| Command | `internal/application/command/video/extract_frames.go` |
-| ffmpeg | `internal/infrastructure/video/extractor.go` |
+| Segment worker | `cmd/segment` — queue `segment`, routing `video.uploaded.v1` |
+| Frame worker | `cmd/frame` — queue `frame`, routing `video.segment_ready.v1` |
+| Commands | `segment_video.go`, `extract_frames.go` |
+| ffmpeg | `splitter.go`, `extractor.go` |
 | HTTP | `internal/interfaces/http/handler/video_handler.go` |
 | Webhooks | `video_webhook_handler.go`, MinIO object-created handler |
 
-`frame` has no `container_name` — `--scale frame=2` is allowed. The main `worker` stays singleton (outbox relay).
+`frame` / `segment` have no `container_name` — `--scale frame=2` (and segment) is allowed. The main `worker` stays singleton (outbox relay). See [segment](segment.md).

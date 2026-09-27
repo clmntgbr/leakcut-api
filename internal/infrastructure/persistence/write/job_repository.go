@@ -45,3 +45,20 @@ func (r *jobWriteRepository) get(ctx context.Context, query string, args ...any)
 	}
 	return jobDomainFromModel(&model), nil
 }
+
+func (r *jobWriteRepository) IncrementCompletedSegmentCount(ctx context.Context, jobID uuid.UUID) (int, int, error) {
+	db := DBWithContext(ctx, r.db)
+	if err := db.Model(&JobModel{}).
+		Where("id = ?", jobID).
+		UpdateColumn("completed_segment_count", gorm.Expr("completed_segment_count + 1")).Error; err != nil {
+		return 0, 0, err
+	}
+	job, err := r.GetByID(ctx, jobID)
+	if err != nil {
+		return 0, 0, err
+	}
+	if job == nil {
+		return 0, 0, errors.New("job not found after segment increment")
+	}
+	return job.CompletedSegmentCount, job.ExpectedSegmentCount, nil
+}

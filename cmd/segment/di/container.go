@@ -27,8 +27,8 @@ type Container struct {
 func NewContainer(db *gorm.DB, env *config.Config) *Container {
 	topology := rabbitmq.DefaultTopology(
 		env.RabbitMQExchange,
-		env.FrameQueue,
-		env.FrameRoutingKey,
+		env.SegmentQueue,
+		env.SegmentRoutingKey,
 		env.RabbitMQRetryTTLMS,
 	)
 
@@ -36,41 +36,33 @@ func NewContainer(db *gorm.DB, env *config.Config) *Container {
 	if err != nil {
 		log.Fatalf("failed to connect to rabbitmq: %v", err)
 	}
-	conn.UnbindLegacy("video.uploaded.v1")
 
 	outboxRepo := outbox.NewRepository(db)
 	dedupRepo := processed.NewRepository(db)
-	videoWriteRepo := write.NewVideoWriteRepository(db)
-	jobWriteRepo := write.NewJobWriteRepository(db)
-	frameWriteRepo := write.NewFrameWriteRepository(db)
-	segmentWriteRepo := write.NewSegmentWriteRepository(db)
-
 	minioStorage, err := storage.NewMinIOStorage(env)
 	if err != nil {
 		log.Fatalf("failed to create storage client: %v", err)
 	}
 
-	extractHandler := videocommand.NewExtractFramesHandler(
-		videoWriteRepo,
-		jobWriteRepo,
-		segmentWriteRepo,
-		frameWriteRepo,
+	segmentHandler := videocommand.NewSegmentVideoHandler(
+		write.NewVideoWriteRepository(db),
+		write.NewJobWriteRepository(db),
+		write.NewSegmentWriteRepository(db),
 		outboxRepo,
 		minioStorage,
+		infraVideo.NewSegmentSplitter(),
 		infraVideo.NewFrameExtractor(),
-		env.FrameExtractionTimeout,
-		env.FrameMaxWidthPx,
-		env.FrameUploadConcurrency,
+		env.SegmentTimeout,
 	)
 
 	reg := registry.NewHandlerRegistry()
-	reg.Register(domainvideo.EventTypeVideoSegmentReady, dedup.With(
+	reg.Register(domainvideo.EventTypeVideoUploaded, dedup.With(
 		dedupRepo,
-		"extract_frames_on_segment_ready",
-		eventvideo.NewExtractFramesOnSegmentReadyHandler(extractHandler).Handle,
+		"segment_video_on_video_uploaded",
+		eventvideo.NewSegmentVideoOnUploadedHandler(segmentHandler).Handle,
 	))
 
-	consumer := rabbitmq.NewConsumer(conn, reg, env.FrameConcurrency, env.WorkerMaxRetries)
+	consumer := rabbitmq.NewConsumer(conn, reg, env.SegmentConcurrency, env.WorkerMaxRetries)
 
 	return &Container{
 		Consumer: consumer,

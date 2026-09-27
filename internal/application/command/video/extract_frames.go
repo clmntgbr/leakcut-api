@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"sort"
 	"sync"
@@ -16,6 +15,7 @@ import (
 	domainframe "go-api/internal/domain/frame"
 	domainjob "go-api/internal/domain/job"
 	"go-api/internal/domain/port"
+	domainsegment "go-api/internal/domain/segment"
 	domainvideo "go-api/internal/domain/video"
 
 	"github.com/google/uuid"
@@ -26,12 +26,14 @@ var errPersistFrame = errors.New("persist extracted frame")
 const frameContentType = "image/jpeg"
 
 type ExtractFramesCommand struct {
-	VideoID uuid.UUID
+	VideoID   uuid.UUID
+	SegmentID uuid.UUID
 }
 
 type ExtractFramesHandler struct {
 	videoRepo         domainvideo.VideoWriteRepository
 	jobRepo           domainjob.JobWriteRepository
+	segmentRepo       domainsegment.WriteRepository
 	frameRepo         domainframe.FrameWriteRepository
 	outbox            port.OutboxRepository
 	storage           port.Storage
@@ -44,6 +46,7 @@ type ExtractFramesHandler struct {
 func NewExtractFramesHandler(
 	videoRepo domainvideo.VideoWriteRepository,
 	jobRepo domainjob.JobWriteRepository,
+	segmentRepo domainsegment.WriteRepository,
 	frameRepo domainframe.FrameWriteRepository,
 	outbox port.OutboxRepository,
 	storage port.Storage,
@@ -61,6 +64,7 @@ func NewExtractFramesHandler(
 	return &ExtractFramesHandler{
 		videoRepo:         videoRepo,
 		jobRepo:           jobRepo,
+		segmentRepo:       segmentRepo,
 		frameRepo:         frameRepo,
 		outbox:            outbox,
 		storage:           storage,
@@ -77,86 +81,82 @@ func (h *ExtractFramesHandler) Handle(ctx context.Context, cmd ExtractFramesComm
 		ctx, cancel = context.WithTimeout(ctx, h.timeout)
 		defer cancel()
 	}
-	video, job, err := h.load(ctx, cmd.VideoID)
+
+	video, job, segment, err := h.load(ctx, cmd.VideoID, cmd.SegmentID)
 	if err != nil {
 		return err
 	}
 	if domainvideo.ExtractionAlreadyDone(video.Status) {
 		return nil
 	}
-
-	if err := h.markExtracting(ctx, video, job); err != nil {
-		return err
+	if segment.Status == domainsegment.StatusSuccess {
+		return h.maybeFinalize(ctx, video, job)
 	}
 
-	frames, extractErr := h.extractAndStore(ctx, video, job)
+	segment.MarkProcessing()
+	if err := h.segmentRepo.Update(ctx, segment); err != nil {
+		return messaging.Retryable(err)
+	}
+
+	frames, extractErr := h.extractAndStore(ctx, video, job, segment)
 	if extractErr != nil {
 		if isNonRetryableExtract(extractErr) {
-			_ = h.markFailed(ctx, video, job, publicReason(extractErr))
+			_ = h.failSegment(ctx, video, job, segment, publicReason(extractErr))
 			return messaging.NonRetryable(extractErr)
 		}
 		return messaging.Retryable(extractErr)
 	}
 
-	if err := h.markReady(ctx, video, job, frames); err != nil {
+	if err := h.completeSegment(ctx, video, job, segment, len(frames)); err != nil {
 		return messaging.Retryable(err)
 	}
 	return nil
 }
 
-func (h *ExtractFramesHandler) load(ctx context.Context, videoID uuid.UUID) (*domainvideo.Video, *domainjob.Job, error) {
+func (h *ExtractFramesHandler) load(
+	ctx context.Context,
+	videoID, segmentID uuid.UUID,
+) (*domainvideo.Video, *domainjob.Job, *domainsegment.Segment, error) {
 	video, err := h.videoRepo.GetByID(ctx, videoID)
 	if err != nil {
-		return nil, nil, messaging.Retryable(err)
+		return nil, nil, nil, messaging.Retryable(err)
 	}
 	if video == nil {
-		return nil, nil, messaging.NonRetryable(domainvideo.ErrVideoNotFound)
+		return nil, nil, nil, messaging.NonRetryable(domainvideo.ErrVideoNotFound)
 	}
 
 	job, err := h.jobRepo.GetByVideoIDAndType(ctx, video.ID, domainjob.TypeFrame)
 	if err != nil {
-		return nil, nil, messaging.Retryable(err)
+		return nil, nil, nil, messaging.Retryable(err)
 	}
 	if job == nil {
-		return nil, nil, messaging.NonRetryable(errors.New("frame job not found"))
-	}
-	return video, job, nil
-}
-
-func (h *ExtractFramesHandler) markExtracting(ctx context.Context, video *domainvideo.Video, job *domainjob.Job) error {
-	job.MarkProcessing()
-	if err := video.MarkExtracting(job.ID, job.Type, job.Status); err != nil {
-		return messaging.NonRetryable(err)
+		return nil, nil, nil, messaging.NonRetryable(errors.New("frame job not found"))
 	}
 
-	err := h.videoRepo.WithTransaction(ctx, func(txCtx context.Context) error {
-		if err := h.videoRepo.Update(txCtx, video); err != nil {
-			return err
-		}
-		if err := h.jobRepo.Update(txCtx, job); err != nil {
-			return err
-		}
-		return h.outbox.StoreEvents(txCtx, video.PullEvents())
-	})
+	segment, err := h.segmentRepo.GetByID(ctx, segmentID)
 	if err != nil {
-		return messaging.Retryable(err)
+		return nil, nil, nil, messaging.Retryable(err)
 	}
-	return nil
+	if segment == nil || segment.VideoID != video.ID {
+		return nil, nil, nil, messaging.NonRetryable(errors.New("segment not found"))
+	}
+	return video, job, segment, nil
 }
 
 func (h *ExtractFramesHandler) extractAndStore(
 	ctx context.Context,
 	video *domainvideo.Video,
 	job *domainjob.Job,
+	segment *domainsegment.Segment,
 ) ([]domainvideo.ExtractedFramePayload, error) {
-	tmp, err := os.CreateTemp("", "video-extract-*")
+	tmp, err := os.CreateTemp("", "video-extract-seg-*")
 	if err != nil {
 		return nil, err
 	}
 	defer os.Remove(tmp.Name())
 	defer tmp.Close()
 
-	reader, err := h.storage.Get(ctx, video.StorageKey)
+	reader, err := h.storage.Get(ctx, segment.StorageKey)
 	if err != nil {
 		return nil, err
 	}
@@ -169,11 +169,7 @@ func (h *ExtractFramesHandler) extractAndStore(
 		return nil, err
 	}
 
-	if err := h.storeThumbnail(ctx, video, tmp.Name()); err != nil {
-		log.Printf("failed to store thumbnail for video %s: %v", video.ID, err)
-	}
-
-	pool := newFramePersistPool(ctx, h, video, h.uploadConcurrency)
+	pool := newFramePersistPool(ctx, h, video, segment, h.uploadConcurrency)
 	extractErr := h.extractor.ExtractFrames(ctx, tmp.Name(), port.FrameSelectionParams{
 		AnalysisFPS:            job.AnalysisFPS,
 		PHashDistanceThreshold: job.PHashDistanceThreshold,
@@ -200,31 +196,34 @@ func (h *ExtractFramesHandler) extractAndStore(
 }
 
 type framePersistPool struct {
-	ctx    context.Context
-	h      *ExtractFramesHandler
-	video  *domainvideo.Video
-	sem    chan struct{}
-	wg     sync.WaitGroup
-	mu     sync.Mutex
-	err    error
-	frames []domainvideo.ExtractedFramePayload
+	ctx     context.Context
+	h       *ExtractFramesHandler
+	video   *domainvideo.Video
+	segment *domainsegment.Segment
+	sem     chan struct{}
+	wg      sync.WaitGroup
+	mu      sync.Mutex
+	err     error
+	frames  []domainvideo.ExtractedFramePayload
 }
 
 func newFramePersistPool(
 	ctx context.Context,
 	h *ExtractFramesHandler,
 	video *domainvideo.Video,
+	segment *domainsegment.Segment,
 	concurrency int,
 ) *framePersistPool {
 	if concurrency <= 0 {
 		concurrency = domainjob.DefaultFrameUploadConcurrency
 	}
 	return &framePersistPool{
-		ctx:    ctx,
-		h:      h,
-		video:  video,
-		sem:    make(chan struct{}, concurrency),
-		frames: make([]domainvideo.ExtractedFramePayload, 0),
+		ctx:     ctx,
+		h:       h,
+		video:   video,
+		segment: segment,
+		sem:     make(chan struct{}, concurrency),
+		frames:  make([]domainvideo.ExtractedFramePayload, 0),
 	}
 }
 
@@ -249,7 +248,7 @@ func (p *framePersistPool) Submit(item port.ExtractedFrame) error {
 			return
 		}
 
-		storageKey := domainvideo.NewFrameStorageKey(p.video.ID, item.Index)
+		storageKey := domainvideo.NewFrameStorageKey(p.video.ID, p.segment.SegmentIndex, item.Index)
 		if err := p.h.storage.Put(
 			p.ctx,
 			storageKey,
@@ -261,10 +260,12 @@ func (p *framePersistPool) Submit(item port.ExtractedFrame) error {
 			return
 		}
 
+		timestampMs := p.segment.OffsetMs + item.TimestampMs
 		frame := domainframe.NewFrame(
 			p.video.ID,
+			p.segment.SegmentIndex,
 			item.Index,
-			item.TimestampMs,
+			timestampMs,
 			storageKey,
 			item.SelectionReason,
 			item.PHashDistance,
@@ -294,7 +295,7 @@ func (p *framePersistPool) Wait() ([]domainvideo.ExtractedFramePayload, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	sort.Slice(p.frames, func(i, j int) bool {
-		return p.frames[i].Index < p.frames[j].Index
+		return p.frames[i].TimestampMs < p.frames[j].TimestampMs
 	})
 	return p.frames, p.err
 }
@@ -313,38 +314,121 @@ func (p *framePersistPool) setErr(err error) {
 	}
 }
 
-func (h *ExtractFramesHandler) storeThumbnail(ctx context.Context, video *domainvideo.Video, videoPath string) error {
-	data, err := h.extractor.ExtractThumbnail(ctx, videoPath)
+func (h *ExtractFramesHandler) completeSegment(
+	ctx context.Context,
+	video *domainvideo.Video,
+	job *domainjob.Job,
+	segment *domainsegment.Segment,
+	frameCount int,
+) error {
+	var (
+		allDone    bool
+		allFrames  []domainvideo.ExtractedFramePayload
+		completed  int
+		expected   int
+	)
+
+	err := h.videoRepo.WithTransaction(ctx, func(txCtx context.Context) error {
+		current, err := h.segmentRepo.GetByID(txCtx, segment.ID)
+		if err != nil {
+			return err
+		}
+		if current == nil {
+			return errors.New("segment not found")
+		}
+		if current.Status == domainsegment.StatusSuccess {
+			// Already counted — still try finalize if needed.
+			jobReloaded, err := h.jobRepo.GetByID(txCtx, job.ID)
+			if err != nil {
+				return err
+			}
+			if jobReloaded != nil {
+				*job = *jobReloaded
+			}
+			allDone = job.SegmentsComplete()
+		} else {
+			segment.MarkSuccess()
+			if err := h.segmentRepo.Update(txCtx, segment); err != nil {
+				return err
+			}
+			completed, expected, err = h.jobRepo.IncrementCompletedSegmentCount(txCtx, job.ID)
+			if err != nil {
+				return err
+			}
+			job.CompletedSegmentCount = completed
+			job.ExpectedSegmentCount = expected
+			allDone = expected > 0 && completed >= expected
+		}
+
+		video.RecordSegmentFramesExtracted(
+			job.ID,
+			segment.ID,
+			segment.SegmentIndex,
+			frameCount,
+			job.ExpectedSegmentCount,
+			job.CompletedSegmentCount,
+		)
+
+		if allDone && !domainvideo.ExtractionAlreadyDone(video.Status) {
+			listed, err := h.frameRepo.ListByVideoID(txCtx, video.ID)
+			if err != nil {
+				return err
+			}
+			allFrames = toExtractedPayloads(listed)
+			job.SetExpectedFrameCount(len(allFrames))
+			job.MarkSuccess()
+			if err := video.MarkFramesReady(job.ID, job.Type, job.Status, allFrames); err != nil {
+				return err
+			}
+			if err := h.jobRepo.Update(txCtx, job); err != nil {
+				return err
+			}
+			ocrJob, err := h.jobRepo.GetByVideoIDAndType(txCtx, video.ID, domainjob.TypeOCR)
+			if err != nil {
+				return err
+			}
+			if ocrJob == nil {
+				if err := h.jobRepo.Save(txCtx, domainjob.NewOCRJob(video.ID)); err != nil {
+					return err
+				}
+			}
+		}
+
+		if err := h.videoRepo.Update(txCtx, video); err != nil {
+			return err
+		}
+		return h.outbox.StoreEvents(txCtx, video.PullEvents())
+	})
 	if err != nil {
 		return err
 	}
 
-	key := domainvideo.NewThumbnailStorageKey(video.ID)
-	if err := h.storage.Put(ctx, key, bytes.NewReader(data), int64(len(data)), "image/jpeg"); err != nil {
-		return err
+	h.cleanupSegmentObject(ctx, video, segment)
+	if allDone {
+		h.cleanupAllSegmentObjects(ctx, video)
 	}
-
-	video.SetThumbnailKey(key)
-	return h.videoRepo.UpdateThumbnailKey(ctx, video.ID, key)
+	return nil
 }
 
-func (h *ExtractFramesHandler) markReady(
-	ctx context.Context,
-	video *domainvideo.Video,
-	job *domainjob.Job,
-	frames []domainvideo.ExtractedFramePayload,
-) error {
-	job.SetExpectedFrameCount(len(frames))
-	job.MarkSuccess()
-	if err := video.MarkFramesReady(job.ID, job.Type, job.Status, frames); err != nil {
-		return err
+func (h *ExtractFramesHandler) maybeFinalize(ctx context.Context, video *domainvideo.Video, job *domainjob.Job) error {
+	if !job.SegmentsComplete() || domainvideo.ExtractionAlreadyDone(video.Status) {
+		return nil
 	}
-
-	return h.videoRepo.WithTransaction(ctx, func(txCtx context.Context) error {
-		if err := h.videoRepo.Update(txCtx, video); err != nil {
+	listed, err := h.frameRepo.ListByVideoID(ctx, video.ID)
+	if err != nil {
+		return messaging.Retryable(err)
+	}
+	payloads := toExtractedPayloads(listed)
+	job.SetExpectedFrameCount(len(payloads))
+	job.MarkSuccess()
+	if err := video.MarkFramesReady(job.ID, job.Type, job.Status, payloads); err != nil {
+		return messaging.NonRetryable(err)
+	}
+	err = h.videoRepo.WithTransaction(ctx, func(txCtx context.Context) error {
+		if err := h.jobRepo.Update(txCtx, job); err != nil {
 			return err
 		}
-		if err := h.jobRepo.Update(txCtx, job); err != nil {
+		if err := h.videoRepo.Update(txCtx, video); err != nil {
 			return err
 		}
 		ocrJob, err := h.jobRepo.GetByVideoIDAndType(txCtx, video.ID, domainjob.TypeOCR)
@@ -358,20 +442,31 @@ func (h *ExtractFramesHandler) markReady(
 		}
 		return h.outbox.StoreEvents(txCtx, video.PullEvents())
 	})
+	if err != nil {
+		return err
+	}
+	h.cleanupAllSegmentObjects(ctx, video)
+	return nil
 }
 
-func (h *ExtractFramesHandler) markFailed(
+func (h *ExtractFramesHandler) failSegment(
 	ctx context.Context,
 	video *domainvideo.Video,
 	job *domainjob.Job,
+	segment *domainsegment.Segment,
 	reason string,
 ) error {
+	segment.MarkFailed(reason)
 	job.MarkFailed(reason)
 	if err := video.MarkExtractionFailed(job.ID, job.Type, job.Status, reason); err != nil {
 		return err
 	}
-
-	return h.videoRepo.WithTransaction(ctx, func(txCtx context.Context) error {
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	return h.videoRepo.WithTransaction(writeCtx, func(txCtx context.Context) error {
+		if err := h.segmentRepo.Update(txCtx, segment); err != nil {
+			return err
+		}
 		if err := h.videoRepo.Update(txCtx, video); err != nil {
 			return err
 		}
@@ -380,6 +475,45 @@ func (h *ExtractFramesHandler) markFailed(
 		}
 		return h.outbox.StoreEvents(txCtx, video.PullEvents())
 	})
+}
+
+func (h *ExtractFramesHandler) cleanupSegmentObject(
+	ctx context.Context,
+	video *domainvideo.Video,
+	segment *domainsegment.Segment,
+) {
+	if segment == nil || segment.StorageKey == "" || segment.StorageKey == video.StorageKey {
+		return
+	}
+	_ = h.storage.Delete(ctx, segment.StorageKey)
+}
+
+func (h *ExtractFramesHandler) cleanupAllSegmentObjects(ctx context.Context, video *domainvideo.Video) {
+	segments, err := h.segmentRepo.ListByVideoID(ctx, video.ID)
+	if err != nil {
+		return
+	}
+	for _, segment := range segments {
+		h.cleanupSegmentObject(ctx, video, segment)
+	}
+}
+
+func toExtractedPayloads(frames []*domainframe.Frame) []domainvideo.ExtractedFramePayload {
+	out := make([]domainvideo.ExtractedFramePayload, 0, len(frames))
+	for _, frame := range frames {
+		out = append(out, domainvideo.ExtractedFramePayload{
+			ID:              frame.ID.String(),
+			Index:           frame.Index,
+			TimestampMs:     frame.TimestampMs,
+			StorageKey:      frame.StorageKey,
+			SelectionReason: frame.SelectionReason,
+			PHashDistance:   frame.PHashDistance,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].TimestampMs < out[j].TimestampMs
+	})
+	return out
 }
 
 func publicReason(err error) string {

@@ -216,7 +216,7 @@ func TestVideoHandler_GetByID_Success(t *testing.T) {
 	if len(out.Jobs) != 1 {
 		t.Fatalf("jobs: got %d want 1", len(out.Jobs))
 	}
-	if out.Jobs[0].Type != "frame" || out.Jobs[0].Status != "pending" {
+	if out.Jobs[0].Type != "segment" || out.Jobs[0].Status != "pending" {
 		t.Fatalf("jobs[0]: %+v", out.Jobs[0])
 	}
 	if out.VideoURL == nil || *out.VideoURL == "" {
@@ -330,7 +330,8 @@ func TestVideoHandler_GetByID_Success_WithOCRJob(t *testing.T) {
 	view.ExpectedFrameCount = 12
 	view.OCRCompletedCount = 3
 	view.Jobs = []domainvideo.JobView{
-		{ID: testutil.TestJobID, Type: "frame", Status: "success", FrameCount: 12},
+		{ID: testutil.TestJobID, Type: "segment", Status: "success", ExpectedSegmentCount: 1},
+		{ID: testutil.TestJobID, Type: "frame", Status: "success", FrameCount: 12, ExpectedSegmentCount: 1, CompletedSegmentCount: 1},
 		{ID: testutil.TestOCRJobID, Type: "ocr", Status: "processing", ExpectedFrameCount: 12, OCRCompletedCount: 3},
 	}
 	get := &mockGetVideoByIDHandler{view: view}
@@ -360,11 +361,11 @@ func TestVideoHandler_GetByID_Success_WithOCRJob(t *testing.T) {
 	if out.JobStatus == nil || *out.JobStatus != "processing" {
 		t.Fatalf("job status: got %v", out.JobStatus)
 	}
-	if len(out.Jobs) != 2 {
-		t.Fatalf("jobs: got %d want 2", len(out.Jobs))
+	if len(out.Jobs) != 3 {
+		t.Fatalf("jobs: got %d want 3", len(out.Jobs))
 	}
-	if out.Jobs[1].ID != testutil.TestOCRJobID.String() || out.Jobs[1].Type != "ocr" {
-		t.Fatalf("jobs[1]: %+v", out.Jobs[1])
+	if out.Jobs[2].ID != testutil.TestOCRJobID.String() || out.Jobs[2].Type != "ocr" {
+		t.Fatalf("jobs[2]: %+v", out.Jobs[2])
 	}
 }
 

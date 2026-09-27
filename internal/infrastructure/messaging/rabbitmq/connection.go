@@ -40,6 +40,12 @@ func Connect(url string, topology Topology, extra ...Topology) (*Connection, err
 	return &Connection{conn: conn, channel: ch, topology: topology}, nil
 }
 
+func (c *Connection) UnbindLegacy(routingKeys ...string) {
+	for _, key := range routingKeys {
+		_ = c.channel.QueueUnbind(c.topology.Queue, key, c.topology.Exchange, nil)
+	}
+}
+
 func (c *Connection) Channel() *amqp.Channel {
 	return c.channel
 }
